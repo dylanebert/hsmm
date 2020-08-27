@@ -117,6 +117,7 @@ class SemiMarkovModule(torch.nn.Module):
         parser.add_argument('--sm_supervised_method', choices=['closed_form', 'gradient_based', 'closed-then-gradient'], default='closed_form')
         parser.add_argument('--sm_feature_projection', action='store_true')
         parser.add_argument('--sm_init_non_projection_parameters_from')
+        parser.add_argument('--lr', type=float, default=1e-2)
 
     def __init__(self, args, n_classes, n_dims, allow_self_transitions=False):
         super(SemiMarkovModule, self).__init__()
@@ -126,6 +127,7 @@ class SemiMarkovModule(torch.nn.Module):
         self.feature_dim = n_dims
         self.allow_self_transitions = allow_self_transitions
         self.max_k = args.sm_max_span_length
+        self.learning_rate = args.lr
         self.init_params()
         self.init_projector()
 
@@ -138,7 +140,7 @@ class SemiMarkovModule(torch.nn.Module):
         self.gaussian_means = torch.nn.Parameter(gaussian_means, requires_grad=True)
 
         gaussian_cov = torch.eye(self.feature_dim, dtype=torch.float)
-        self.gaussian_cov = torch.nn.Parameter(gaussian_cov, requires_grad=True)
+        self.gaussian_cov = torch.nn.Parameter(gaussian_cov, requires_grad=False)
 
         transition_logits = torch.zeros(self.n_classes, self.n_classes, dtype=torch.float)
         self.transition_logits = torch.nn.Parameter(transition_logits, requires_grad=True)
@@ -332,7 +334,6 @@ class SemiMarkovModule(torch.nn.Module):
                 length = lengths_augmented[i]
                 scores[i, :length - 1, k, :, :] += summed[i, :length - 1]
                 scores[i, length - 1 - k, k, :, :] += emission_augmented[i, length - 1].view(C, 1)
-
         return scores
 
     def score_features(self, features, lengths, valid_classes, add_eos):
@@ -384,7 +385,7 @@ class SemiMarkovModule(torch.nn.Module):
 
         return pred_spans_unmap
 
-    def log_likelihood(self, features, lengths, valid_classes_per_instance=None, spans=None, add_eos=True):
+    def log_likelihood(self, features, lengths, valid_classes_per_instance, spans=None, add_eos=True):
         if valid_classes_per_instance is not None:
             valid_classes = valid_classes_per_instance[0]
             C = len(valid_classes)
@@ -392,7 +393,7 @@ class SemiMarkovModule(torch.nn.Module):
             valid_classes = None
             C = self.n_classes
 
-        scores, log_det = self.score_features(features, lengths, valid_classes_per_instance, add_eos=add_eos)
+        scores, log_det = self.score_features(features, lengths, valid_classes, add_eos=add_eos)
 
         K = scores.size(2)
         assert K <= self.max_k or (self.max_k == 1 and K == 2)
