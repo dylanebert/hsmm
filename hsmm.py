@@ -117,7 +117,7 @@ class SemiMarkovModule(torch.nn.Module):
         parser.add_argument('--sm_supervised_method', choices=['closed_form', 'gradient_based', 'closed-then-gradient'], default='closed_form')
         parser.add_argument('--sm_feature_projection', action='store_true')
         parser.add_argument('--sm_init_non_projection_parameters_from')
-        parser.add_argument('--lr', type=float, default=1e-2)
+        parser.add_argument('--lr', type=float, default=1e-1)
 
     def __init__(self, args, n_classes, n_dims, allow_self_transitions=False):
         super(SemiMarkovModule, self).__init__()

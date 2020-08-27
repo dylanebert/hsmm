@@ -116,9 +116,71 @@ def optimal_map(pred, true, possible):
     remapped.apply_(lambda label: mapping[label])
     return remapped, mapping
 
+def untrained_model(n_classes):
+    parser = argparse.ArgumentParser()
+    SemiMarkovModule.add_args(parser)
+    args = parser.parse_args()
+    model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
+
+    return model
+
+def train_supervised(train_dset, n_classes):
+    parser = argparse.ArgumentParser()
+    SemiMarkovModule.add_args(parser)
+    args = parser.parse_args()
+    model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
+
+    train_features = []
+    train_labels = []
+    for i in range(len(train_dset)):
+        sample = train_dset[i]
+        train_features.append(sample['features'])
+        train_labels.append(sample['labels'])
+    model.fit_supervised(train_features, train_labels)
+
+    return model
+
+def train_unsupervised(train_loader, test_loader, n_classes, epochs=25):
+    parser = argparse.ArgumentParser()
+    SemiMarkovModule.add_args(parser)
+    args = parser.parse_args()
+    args.sm_max_span_length = 20
+
+    model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
+
+    s = next(iter(train_loader))
+    features = s['features']
+    lengths = s['lengths']
+    model.initialize_gaussian(features, lengths)
+
+    optimizer = torch.optim.Adam(model.parameters(), model.learning_rate)
+
+    model.train()
+    for epoch in range(epochs):
+        losses = []
+        for batch in train_loader:
+            features = batch['features']
+            lengths = batch['lengths']
+            valid_classes = None#batch['valid_classes']
+            N_ = lengths.max().item()
+            features = features[:, :N_, :]
+            loss, _ = model.log_likelihood(features, lengths, valid_classes)
+            loss = -loss
+            loss.backward()
+            losses.append(loss.item())
+            optimizer.step()
+            model.zero_grad()
+        train_acc, train_remap_acc, train_action_acc, train_action_remap_acc, train_pred = predict(model, train_loader)
+        test_acc, test_remap_acc, test_action_acc, test_action_remap_acc, test_pred = predict(model, test_loader)
+        print('epoch: {}, avg loss: {:.4f}, train acc: {:.2f}, test acc: {:.2f}, train action acc: {:.2f}, test action acc: {:.2f}'.format(
+            epoch, np.mean(losses), train_remap_acc, test_remap_acc, train_action_remap_acc, test_action_remap_acc))
+
+    return model
+
 def predict(model, dataloader):
     items = []
     token_match, remap_match, token_total = 0, 0, 0
+    action_match, action_remap_match = 0, 0
     for batch in dataloader:
         features = batch['features']
         lengths = batch['lengths']
@@ -160,67 +222,14 @@ def predict(model, dataloader):
             items.append(item)
             token_match += (gold_labels_trim[i] == pred_labels_trim[i]).sum().item()
             remap_match += (gold_labels_trim[i] == pred_remapped).sum().item()
+            action_match += (gold_labels_trim[i] == pred_labels_trim[i])[gold_labels_trim[i] != 0].sum().item()
+            action_remap_match += (gold_labels_trim[i] == pred_labels_trim[i])[gold_labels_trim[i] != 0].sum().item()
             token_total += pred_labels_trim[i].size(0)
     accuracy = 100. * token_match / token_total
     remapped_accuracy = 100. * remap_match / token_total
-    return accuracy, remapped_accuracy, items
-
-def train_supervised(train_dset):
-    C = train_dset[0]['features'].size()[-1]
-
-    parser = argparse.ArgumentParser()
-    SemiMarkovModule.add_args(parser)
-    args = parser.parse_args()
-    model = SemiMarkovModule(args, C, C, allow_self_transitions=True)
-
-    train_features = []
-    train_labels = []
-    for i in range(len(train_dset)):
-        sample = train_dset[i]
-        train_features.append(sample['features'])
-        train_labels.append(sample['labels'])
-    model.fit_supervised(train_features, train_labels)
-
-    return model
-
-def train_unsupervised(train_loader, test_loader):
-    C = train_dset[0]['features'].size()[-1]
-
-    parser = argparse.ArgumentParser()
-    SemiMarkovModule.add_args(parser)
-    args = parser.parse_args()
-    args.sm_max_span_length = 20
-
-    model = SemiMarkovModule(args, C, C, allow_self_transitions=True)
-
-    s = next(iter(train_loader))
-    features = s['features']
-    lengths = s['lengths']
-    model.initialize_gaussian(features, lengths)
-
-    optimizer = torch.optim.Adam(model.parameters(), model.learning_rate)
-
-    EPOCHS = 10
-    model.train()
-    for epoch in range(EPOCHS):
-        losses = []
-        for batch in train_loader:
-            features = batch['features']
-            lengths = batch['lengths']
-            valid_classes = None#batch['valid_classes']
-            N_ = lengths.max().item()
-            features = features[:, :N_, :]
-            loss, _ = model.log_likelihood(features, lengths, valid_classes)
-            loss = -loss
-            loss.backward()
-            losses.append(loss.item())
-            optimizer.step()
-            model.zero_grad()
-        train_acc, train_remap_acc, _ = predict(model, train_loader)
-        test_acc, test_remap_acc, _ = predict(model, test_loader)
-        print('epoch: {}, avg loss: {:.4f}, train acc: {:.2f}, test acc: {:.2f}'.format(epoch, np.mean(losses), train_remap_acc, test_remap_acc))
-
-    return model
+    action_accuracy = 100. * action_match / token_total
+    action_remapped_accuracy = 100. * action_remap_match / token_total
+    return accuracy, remapped_accuracy, action_accuracy, action_remapped_accuracy, items
 
 if __name__ == '__main__':
     #train_dset = ToyDataset(*synthetic_data(C=3, num_points=150), max_k=20)
@@ -229,15 +238,22 @@ if __name__ == '__main__':
     train_dset = ToyDataset(*nbc_data.get_onehot_dataset('train'), max_k=180)
     test_dset = ToyDataset(*nbc_data.get_onehot_dataset('test'), max_k=180)
 
+    n_classes = train_dset[0]['features'].size(1)
+
     train_loader = DataLoader(train_dset, batch_size=10)
     test_loader = DataLoader(test_dset, batch_size=10)
 
-    model = train_unsupervised(train_loader, test_loader)
-    #model = train_supervised(train_dset)
+    #model = untrained_model(n_classes)
+    #model = train_supervised(train_dset, n_classes)
+    model = train_unsupervised(train_loader, test_loader, n_classes)
 
-    train_acc, train_remap_acc, train_pred = predict(model, train_loader)
-    test_acc, test_remap_acc, test_pred = predict(model, test_loader)
+    train_acc, train_remap_acc, train_action_acc, train_action_remap_acc, train_pred = predict(model, train_loader)
+    test_acc, test_remap_acc, test_action_acc, test_action_remap_acc, test_pred = predict(model, test_loader)
     print('Train acc: {:.2f}'.format(train_acc))
     print('Train remap acc: {:.2f}'.format(train_remap_acc))
+    print('Train action acc: {:.2f}'.format(train_action_acc))
+    print('Train action remap acc: {:.2f}'.format(train_action_remap_acc))
     print('Test acc: {:.2f}'.format(test_acc))
     print('Test remap acc: {:.2f}'.format(test_remap_acc))
+    print('Test action acc: {:.2f}'.format(test_action_acc))
+    print('Test action remap acc: {:.2f}'.format(test_action_remap_acc))

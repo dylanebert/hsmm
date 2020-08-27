@@ -15,6 +15,7 @@ def make_features(class_labels, n_classes, shift_constant=1.0):
 
 def annotations_to_dataset(mode='train'):
     paths = glob.glob('D:/nbc/tuning/*.txt')
+    assert len(paths) > 0
     annotations = []
     for path in paths:
         sess = path.split('\\')[-1].replace('_annotations.txt', '')
@@ -29,14 +30,13 @@ def annotations_to_dataset(mode='train'):
         start, end = spatial_.iloc[0]['step'], spatial_.iloc[-1]['step']
         annotations.append((annotations_, start, end))
 
-    mapping = {'idle': 0}
+    mapping = {'idle': 0, 'reach': 1, 'pick': 2, 'put': 3}
     N = 0
     for a, start, end in annotations:
         if end - start > N:
             N = end - start
         for action in a['action'].values:
-            if action not in mapping:
-                mapping[action] = len(mapping)
+            assert action in mapping, action
 
     labels = []
     lengths = []
@@ -99,9 +99,13 @@ def compute_baseline(labels):
 
 if __name__ == '__main__':
     #annotations_to_dataset('test')
-    labels, features, lengths, valid_classes = get_onehot_dataset('train')
+    labels, features, lengths, valid_classes = get_onehot_dataset('test')
     max_k = compute_max_k(labels)
     baseline = compute_baseline(labels)
     print(baseline)
 
     #annotations_to_dataset('train')
+    labels, features, lengths, valid_classes = get_onehot_dataset('train')
+    max_k = compute_max_k(labels)
+    baseline = compute_baseline(labels)
+    print(baseline)
