@@ -7,6 +7,9 @@ import argparse
 from tqdm import tqdm
 from scipy.optimize import linear_sum_assignment
 import nbc_data
+import os
+from datetime import datetime
+import glob
 
 class ToyDataset(Dataset):
     def __init__(self, labels, features, lengths, valid_classes, max_k):
@@ -96,10 +99,9 @@ def synthetic_data(num_points=200, C=3, N=20, K=5, classes_per_seq=None):
         seq = seq[:N]
         labels.append(seq)
     labels = torch.LongTensor(labels)
-    features = make_features(labels)
+    features = make_features(labels, shift_constant=1.)
     lengths = torch.LongTensor(lengths)
     valid_classes = [torch.LongTensor(c) for c in valid_classes]
-
     return labels, features, lengths, valid_classes
 
 def optimal_map(pred, true, possible):
@@ -119,7 +121,7 @@ def optimal_map(pred, true, possible):
 def untrained_model(n_classes):
     parser = argparse.ArgumentParser()
     SemiMarkovModule.add_args(parser)
-    args = parser.parse_args()
+    args = parser.parse_args([])
     model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
 
     return model
@@ -127,7 +129,7 @@ def untrained_model(n_classes):
 def train_supervised(train_dset, n_classes):
     parser = argparse.ArgumentParser()
     SemiMarkovModule.add_args(parser)
-    args = parser.parse_args()
+    args = parser.parse_args([])
     model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
 
     train_features = []
@@ -143,7 +145,7 @@ def train_supervised(train_dset, n_classes):
 def train_unsupervised(train_loader, test_loader, n_classes, epochs=25):
     parser = argparse.ArgumentParser()
     SemiMarkovModule.add_args(parser)
-    args = parser.parse_args()
+    args = parser.parse_args([])
     args.sm_max_span_length = 20
 
     model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
@@ -185,7 +187,7 @@ def predict(model, dataloader):
         features = batch['features']
         lengths = batch['lengths']
         gold_spans = batch['spans']
-        valid_classes = None#batch['valid_classes']
+        valid_classes = batch['valid_classes']
 
         batch_size = features.size(0)
         N_ = lengths.max().item()
@@ -232,28 +234,50 @@ def predict(model, dataloader):
     return accuracy, remapped_accuracy, action_accuracy, action_remapped_accuracy, items
 
 if __name__ == '__main__':
-    #train_dset = ToyDataset(*synthetic_data(C=3, num_points=150), max_k=20)
-    #test_dset = ToyDataset(*synthetic_data(C=3, num_points=50), max_k=20)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--load_model', type=str, default='')
+    parser.add_argument('--model', choices=['random', 'supervised', 'unsupervised'], default='supervised')
+    parser.add_argument('--dataset', choices=['toy', 'nbc-like'], default='nbc-like')
+    args = parser.parse_args()
 
-    train_dset = ToyDataset(*nbc_data.get_onehot_dataset('train'), max_k=180)
-    test_dset = ToyDataset(*nbc_data.get_onehot_dataset('test'), max_k=180)
+    if args.dataset == 'toy':
+        train_dset = ToyDataset(*synthetic_data(C=3, num_points=150), max_k=20)
+        test_dset = ToyDataset(*synthetic_data(C=3, num_points=50), max_k=20)
+    elif args.dataset == 'nbc-like':
+        train_dset = ToyDataset(*nbc_data.annotations_dataset('train'), max_k=20)
+        test_dset = ToyDataset(*nbc_data.annotations_dataset('test'), max_k=20)
 
     n_classes = train_dset[0]['features'].size(1)
-
     train_loader = DataLoader(train_dset, batch_size=10)
     test_loader = DataLoader(test_dset, batch_size=10)
 
-    #model = untrained_model(n_classes)
-    #model = train_supervised(train_dset, n_classes)
-    model = train_unsupervised(train_loader, test_loader, n_classes)
+    if args.load_model == '':
+        if args.model == 'random':
+            model = untrained_model(n_classes)
+        elif args.model == 'supervised':
+            model = train_supervised(train_dset, n_classes)
+        elif args.model == 'unsupervised':
+            model = train_unsupervised(train_loader, test_loader, n_classes)
+        modelpath = 'models/{}_{}'.format(args.dataset, args.model)
+        version = glob.glob(modelpath + '*')
+        if version == []:
+            savepath = modelpath + '0.pt'
+        else:
+            version_num = int(version[-1][len(modelpath):].replace('.pt', ''))
+            version_num += 1
+            savepath = '{}{}.pt'.format(modelpath, version_num)
+        print('Saving model to {}'.format(savepath))
+        torch.save(model, savepath)
+    else:
+        save_path = os.path.join('models', args.load_model)
+        print('Loading model from {}'.format(save_path))
+        model = torch.load(save_path)
 
     train_acc, train_remap_acc, train_action_acc, train_action_remap_acc, train_pred = predict(model, train_loader)
     test_acc, test_remap_acc, test_action_acc, test_action_remap_acc, test_pred = predict(model, test_loader)
-    print('Train acc: {:.2f}'.format(train_acc))
-    print('Train remap acc: {:.2f}'.format(train_remap_acc))
-    print('Train action acc: {:.2f}'.format(train_action_acc))
-    print('Train action remap acc: {:.2f}'.format(train_action_remap_acc))
-    print('Test acc: {:.2f}'.format(test_acc))
-    print('Test remap acc: {:.2f}'.format(test_remap_acc))
-    print('Test action acc: {:.2f}'.format(test_action_acc))
-    print('Test action remap acc: {:.2f}'.format(test_action_remap_acc))
+    if args.model == 'unsupervised':
+        print('Train acc: {:.2f}; step: {:.2f}'.format(train_remap_acc, train_action_remap_acc))
+        print('Test acc: {:.2f}; step: {:.2f}'.format(test_remap_acc, test_action_remap_acc))
+    else:
+        print('Train acc: {:.2f}; step: {:.2f}'.format(train_acc, train_action_acc))
+        print('Test acc: {:.2f}; step: {:.2f}'.format(test_acc, test_action_acc))

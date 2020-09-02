@@ -5,6 +5,8 @@ import torch
 import h5py
 import subprocess
 from tqdm import tqdm
+import os
+import json
 
 def make_features(class_labels, n_classes, shift_constant=1.0):
     batch_size_, N_ = class_labels.size()
@@ -13,7 +15,20 @@ def make_features(class_labels, n_classes, shift_constant=1.0):
     shift.scatter_(2, class_labels.unsqueeze(2), shift_constant)
     return shift + f
 
-def annotations_to_dataset(mode='train'):
+def get_meta(sess):
+    metapath = 'D:/nbc/meta/{}_start_end.json'.format(sess)
+    if os.path.exists(metapath):
+        with open(metapath) as f:
+            d = json.load(f)
+        return d['start'], d['end']
+    else:
+        spatial_ = pd.read_json('D:/nbc/raw/{}/spatial.json'.format(sess), orient='index')
+        start, end = spatial_.iloc[0]['step'], spatial_.iloc[-1]['step']
+        with open(metapath, 'w') as f:
+            json.dump({'start': int(start), 'end': int(end)}, f)
+        return start, end
+
+def annotations_dataset(mode='train', subsample=45):
     paths = glob.glob('D:/nbc/tuning/*.txt')
     assert len(paths) > 0
     annotations = []
@@ -26,8 +41,7 @@ def annotations_to_dataset(mode='train'):
             if sess[:4] not in ['3_1b', '4_2b']:
                 continue
         annotations_ = pd.read_csv(path, header=None, names=['start_step', 'end_step', 'action', 'object'])
-        spatial_ = pd.read_json('D:/nbc/raw/{}/spatial.json'.format(sess), orient='index')
-        start, end = spatial_.iloc[0]['step'], spatial_.iloc[-1]['step']
+        start, end = get_meta(sess)
         annotations.append((annotations_, start, end))
 
     mapping = {'idle': 0, 'reach': 1, 'pick': 2, 'put': 3}
@@ -43,40 +57,25 @@ def annotations_to_dataset(mode='train'):
     valid_classes = []
     for a, start, end in annotations:
         lengths.append(end - start)
-        seq = []
-        valid_classes_ = []
-        for i in range(start, end):
-            label = 0
-            for _, row in a.iterrows():
-                if i in range(row['start_step'], row['end_step']):
-                    label = mapping[row['action']]
-            seq.append(label)
+        seq = np.zeros((N,))
+        valid_classes_ = [0]
+        for _, row in a.iterrows():
+            label = mapping[row['action']]
+            seq[row['start_step']-start:row['end_step']-start] = label
             if label not in valid_classes_:
                 valid_classes_.append(label)
-        while len(seq) < N:
-            seq.append(0)
         labels.append(seq)
         valid_classes.append(valid_classes_)
-    features = make_features(torch.LongTensor(labels), len(mapping)).detach().cpu().numpy()
 
-    with h5py.File('data\\nbc_toy_{}.h5'.format(mode), 'w') as f:
-        f.create_dataset('labels', data=np.array(labels, dtype=int))
-        f.create_dataset('features', data=np.array(features, dtype=np.float32))
-        f.create_dataset('lengths', data=np.array(lengths, dtype=int))
+    indices = list(range(0, N, subsample))
+    labels = np.array(labels)[:, indices]
+    lengths = np.array(lengths) // subsample
 
-def get_onehot_dataset(mode='train', subsample=90):
-    with h5py.File('data\\nbc_toy_{}.h5'.format(mode), 'r') as f:
-        labels = np.array(f['labels'])
-        features = np.array(f['features'])
-        lengths = np.array(f['lengths'])
-    indices = list(range(0, labels.shape[1], subsample))
-    labels = labels[:, indices]
-    features = features[:, indices, :]
-    lengths = lengths // subsample
     labels = torch.LongTensor(labels)
-    features = torch.Tensor(features)
+    features = make_features(labels, len(mapping))
     lengths = torch.LongTensor(lengths)
-    return labels, features, lengths, None
+    valid_classes = [torch.LongTensor(c) for c in valid_classes]
+    return labels, features, lengths, valid_classes
 
 def compute_max_k(labels):
     labels = labels.detach().cpu().numpy()
@@ -98,14 +97,12 @@ def compute_baseline(labels):
     return np.sum(labels == 0) / float(len(labels))
 
 if __name__ == '__main__':
-    #annotations_to_dataset('test')
-    labels, features, lengths, valid_classes = get_onehot_dataset('test')
+    labels, features, lengths, valid_classes = annotations_dataset('train')
     max_k = compute_max_k(labels)
     baseline = compute_baseline(labels)
-    print(baseline)
+    print(baseline, max_k)
 
-    #annotations_to_dataset('train')
-    labels, features, lengths, valid_classes = get_onehot_dataset('train')
+    labels, features, lengths, valid_classes = annotations_dataset('test')
     max_k = compute_max_k(labels)
     baseline = compute_baseline(labels)
-    print(baseline)
+    print(baseline, max_k)

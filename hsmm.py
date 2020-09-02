@@ -494,7 +494,7 @@ def rle_spans(spans, lengths):
         count = 0
         for symbol in spans_:
             symbol = symbol.item()
-            if symbol_ is None or symbol_ != -1:
+            if symbol_ is None or symbol != -1:
                 if symbol_ is not None:
                     assert count > 0
                     rle_.append((symbol_, count))
