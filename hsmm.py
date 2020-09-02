@@ -119,7 +119,7 @@ class SemiMarkovModule(torch.nn.Module):
         parser.add_argument('--sm_init_non_projection_parameters_from')
         parser.add_argument('--lr', type=float, default=1e-1)
 
-    def __init__(self, args, n_classes, n_dims, allow_self_transitions=False):
+    def __init__(self, args, n_classes, n_dims, allow_self_transitions=True):
         super(SemiMarkovModule, self).__init__()
         self.args = args
         self.n_classes = n_classes

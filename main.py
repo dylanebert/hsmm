@@ -118,18 +118,20 @@ def optimal_map(pred, true, possible):
     remapped.apply_(lambda label: mapping[label])
     return remapped, mapping
 
-def untrained_model(n_classes):
+def untrained_model(n_classes, max_k):
     parser = argparse.ArgumentParser()
     SemiMarkovModule.add_args(parser)
-    args = parser.parse_args([])
+    args = parser.parse_args(['--sm_max_span_length', str(max_k)])
+
     model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
 
     return model
 
-def train_supervised(train_dset, n_classes):
+def train_supervised(train_dset, n_classes, max_k):
     parser = argparse.ArgumentParser()
     SemiMarkovModule.add_args(parser)
-    args = parser.parse_args([])
+    args = parser.parse_args(['--sm_max_span_length', str(max_k)])
+
     model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
 
     train_features = []
@@ -142,11 +144,10 @@ def train_supervised(train_dset, n_classes):
 
     return model
 
-def train_unsupervised(train_loader, test_loader, n_classes, epochs=25):
+def train_unsupervised(train_loader, test_loader, n_classes, max_k, epochs=25):
     parser = argparse.ArgumentParser()
     SemiMarkovModule.add_args(parser)
-    args = parser.parse_args([])
-    args.sm_max_span_length = 20
+    args = parser.parse_args(['--sm_max_span_length', str(max_k)])
 
     model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
 
@@ -163,7 +164,7 @@ def train_unsupervised(train_loader, test_loader, n_classes, epochs=25):
         for batch in train_loader:
             features = batch['features']
             lengths = batch['lengths']
-            valid_classes = None#batch['valid_classes']
+            valid_classes = batch['valid_classes']
             N_ = lengths.max().item()
             features = features[:, :N_, :]
             loss, _ = model.log_likelihood(features, lengths, valid_classes)
@@ -172,14 +173,14 @@ def train_unsupervised(train_loader, test_loader, n_classes, epochs=25):
             losses.append(loss.item())
             optimizer.step()
             model.zero_grad()
-        train_acc, train_remap_acc, train_action_acc, train_action_remap_acc, train_pred = predict(model, train_loader)
-        test_acc, test_remap_acc, test_action_acc, test_action_remap_acc, test_pred = predict(model, test_loader)
-        print('epoch: {}, avg loss: {:.4f}, train acc: {:.2f}, test acc: {:.2f}, train action acc: {:.2f}, test action acc: {:.2f}'.format(
+        train_remap_acc, train_action_remap_acc, train_pred = predict(model, train_loader, remap=True)
+        test_remap_acc, test_action_remap_acc, test_pred = predict(model, test_loader, remap=True)
+        print('epoch: {}, avg loss: {:.4f}, train acc: {:.2f}, test acc: {:.2f}, train step acc: {:.2f}, test step acc: {:.2f}'.format(
             epoch, np.mean(losses), train_remap_acc, test_remap_acc, train_action_remap_acc, test_action_remap_acc))
 
     return model
 
-def predict(model, dataloader):
+def predict(model, dataloader, remap=True):
     items = []
     token_match, remap_match, token_total = 0, 0, 0
     action_match, action_remap_match = 0, 0
@@ -231,33 +232,37 @@ def predict(model, dataloader):
     remapped_accuracy = 100. * remap_match / token_total
     action_accuracy = 100. * action_match / token_total
     action_remapped_accuracy = 100. * action_remap_match / token_total
-    return accuracy, remapped_accuracy, action_accuracy, action_remapped_accuracy, items
+    if remap:
+        return remapped_accuracy, action_remapped_accuracy, items
+    else:
+        return accuracy, action_accuracy, items
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--load_model', type=str, default='')
-    parser.add_argument('--model', choices=['random', 'supervised', 'unsupervised'], default='supervised')
+    parser.add_argument('--model', choices=['background', 'supervised', 'unsupervised'], default='supervised')
     parser.add_argument('--dataset', choices=['toy', 'nbc-like'], default='nbc-like')
+    parser.add_argument('--max_k', type=int, default=20)
     args = parser.parse_args()
 
     if args.dataset == 'toy':
-        train_dset = ToyDataset(*synthetic_data(C=3, num_points=150), max_k=20)
-        test_dset = ToyDataset(*synthetic_data(C=3, num_points=50), max_k=20)
+        train_dset = ToyDataset(*synthetic_data(C=3, num_points=150), max_k=args.max_k)
+        test_dset = ToyDataset(*synthetic_data(C=3, num_points=50), max_k=args.max_k)
     elif args.dataset == 'nbc-like':
-        train_dset = ToyDataset(*nbc_data.annotations_dataset('train'), max_k=20)
-        test_dset = ToyDataset(*nbc_data.annotations_dataset('test'), max_k=20)
+        train_dset = ToyDataset(*nbc_data.annotations_dataset('train'), max_k=args.max_k)
+        test_dset = ToyDataset(*nbc_data.annotations_dataset('test'), max_k=args.max_k)
 
     n_classes = train_dset[0]['features'].size(1)
     train_loader = DataLoader(train_dset, batch_size=10)
     test_loader = DataLoader(test_dset, batch_size=10)
 
     if args.load_model == '':
-        if args.model == 'random':
-            model = untrained_model(n_classes)
+        if args.model == 'background':
+            model = untrained_model(n_classes, args.max_k)
         elif args.model == 'supervised':
-            model = train_supervised(train_dset, n_classes)
+            model = train_supervised(train_dset, n_classes, args.max_k)
         elif args.model == 'unsupervised':
-            model = train_unsupervised(train_loader, test_loader, n_classes)
+            model = train_unsupervised(train_loader, test_loader, n_classes, args.max_k)
         modelpath = 'models/{}_{}'.format(args.dataset, args.model)
         version = glob.glob(modelpath + '*')
         if version == []:
@@ -273,11 +278,7 @@ if __name__ == '__main__':
         print('Loading model from {}'.format(save_path))
         model = torch.load(save_path)
 
-    train_acc, train_remap_acc, train_action_acc, train_action_remap_acc, train_pred = predict(model, train_loader)
-    test_acc, test_remap_acc, test_action_acc, test_action_remap_acc, test_pred = predict(model, test_loader)
-    if args.model == 'unsupervised':
-        print('Train acc: {:.2f}; step: {:.2f}'.format(train_remap_acc, train_action_remap_acc))
-        print('Test acc: {:.2f}; step: {:.2f}'.format(test_remap_acc, test_action_remap_acc))
-    else:
-        print('Train acc: {:.2f}; step: {:.2f}'.format(train_acc, train_action_acc))
-        print('Test acc: {:.2f}; step: {:.2f}'.format(test_acc, test_action_acc))
+    train_acc, train_action_acc, train_pred = predict(model, train_loader, remap=(args.model == 'unsupervised'))
+    test_acc, test_action_acc, test_pred = predict(model, test_loader, remap=(args.model == 'unsupervised'))
+    print('Train acc: {:.2f}; step: {:.2f}'.format(train_acc, train_action_acc))
+    print('Test acc: {:.2f}; step: {:.2f}'.format(test_acc, test_action_acc))
