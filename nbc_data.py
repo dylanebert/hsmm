@@ -7,6 +7,13 @@ import subprocess
 from tqdm import tqdm
 import os
 import json
+import sys
+
+assert sys.platform in ['win32', 'linux'], 'platform not recognized'
+if sys.platform == 'win32':
+    NBC_ROOT = 'D:/nbc/'
+else:
+    NBC_ROOT = '/users/debert/data/datasets/nbc/'
 
 def make_features(class_labels, n_classes, shift_constant=1.0):
     batch_size_, N_ = class_labels.size()
@@ -16,20 +23,20 @@ def make_features(class_labels, n_classes, shift_constant=1.0):
     return shift + f
 
 def get_meta(sess):
-    metapath = 'D:/nbc/meta/{}_start_end.json'.format(sess)
+    metapath = NBC_ROOT + 'meta/{}_start_end.json'.format(sess)
     if os.path.exists(metapath):
         with open(metapath) as f:
             d = json.load(f)
         return d['start'], d['end']
     else:
-        spatial_ = pd.read_json('D:/nbc/raw/{}/spatial.json'.format(sess), orient='index')
+        spatial_ = pd.read_json(NBC_ROOT + 'raw/{}/spatial.json'.format(sess), orient='index')
         start, end = spatial_.iloc[0]['step'], spatial_.iloc[-1]['step']
         with open(metapath, 'w') as f:
             json.dump({'start': int(start), 'end': int(end)}, f)
         return start, end
 
 def annotations_dataset(mode='train', subsample=45):
-    paths = glob.glob('D:/nbc/tuning/*.txt')
+    paths = glob.glob(NBC_ROOT + 'tuning/*.txt')
     assert len(paths) > 0
     annotations = []
     for path in paths:
