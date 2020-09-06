@@ -40,7 +40,7 @@ def annotations_dataset(mode='train', subsample=45):
     assert len(paths) > 0
     annotations = []
     for path in paths:
-        sess = path.split('\\')[-1].replace('_annotations.txt', '')
+        sess = path.replace('\\', '/').split('/')[-1].replace('_annotations.txt', '')
         if mode == 'train':
             if sess[:4] in ['3_1b', '4_2b']:
                 continue
