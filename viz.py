@@ -6,6 +6,8 @@ import matplotlib.cm as cm
 from hsmm import SemiMarkovModule
 import glob
 import argparse
+from main import optimal_map, labels_to_spans, spans_to_labels, ToyDataset, synthetic_data
+import nbc_data
 
 def viz_parameters(model):
     means = model.gaussian_means.detach().cpu().numpy()
@@ -28,8 +30,6 @@ def viz_parameters(model):
 
     ax2 = fig.add_subplot(222)
     ax2.imshow(cov, interpolation='nearest', cmap=cm.Blues, vmin=0, vmax=1)
-    ax2.set_xlabel('Feature cov')
-    ax2.set_ylabel('State')
     ax2.set_xticks(np.arange(cov.shape[0]))
     ax2.set_yticks(np.arange(cov.shape[0]))
     ax2.set_title('Gaussian covariances')
@@ -52,16 +52,13 @@ def viz_parameters(model):
     plt.tight_layout()
     plt.show()
 
-def viz_state_seq(model):
-    from main import ToyDataset
-    from nbc_data import annotations_dataset
-    from hsmm import labels_to_spans, spans_to_labels
-    dataset = ToyDataset(*annotations_dataset('test'), max_k=20)
+def viz_state_seq(model, dataset, remap=True):
     features = dataset[0]['features'].unsqueeze(0)
     lengths = dataset[0]['lengths'].unsqueeze(0)
     gold_spans = dataset[0]['spans'].unsqueeze(0)
     valid_classes = dataset[0]['valid_classes'].unsqueeze(0)
 
+    batch_size = features.size(0)
     N_ = lengths.max().item()
     features = features[:, :N_, :]
     gold_spans = gold_spans[:, :N_]
@@ -73,11 +70,17 @@ def viz_state_seq(model):
     gold_labels_trim = model.trim(gold_labels, lengths)
     pred_labels_trim = model.trim(pred_labels, lengths)
 
-    gold = gold_labels_trim[0].detach().cpu().numpy()[np.newaxis, :]
-    pred = pred_labels_trim[0].detach().cpu().numpy()[np.newaxis, :]
+    if remap:
+        pred_remapped, mapping = optimal_map(pred_labels_trim[0], gold_labels_trim[0], valid_classes[0])
+        print(mapping)
+        gold = gold_labels_trim[0].detach().cpu().numpy()[np.newaxis, :]
+        pred = pred_remapped.detach().cpu().numpy()[np.newaxis, :]
+    else:
+        gold = gold_labels_trim[0].detach().cpu().numpy()[np.newaxis, :]
+        pred = pred_labels_trim[0].detach().cpu().numpy()[np.newaxis, :]
 
-    gold = np.tile(gold, (10, 1))
-    pred = np.tile(pred, (10, 1))
+    gold = np.tile(gold, (N_ // 10, 1))
+    pred = np.tile(pred, (N_ // 10, 1))
 
     fig = plt.figure()
 
@@ -94,11 +97,18 @@ def viz_state_seq(model):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', choices=['toy', 'nbc-like'], default='nbc-like')
+    parser.add_argument('--model', choices=['background', 'supervised', 'unsupervised'], default='supervised')
     args = parser.parse_args()
 
-    model_fpaths = sorted(list(glob.glob('models/nbc-like*')))
+    model_fpaths = sorted(list(glob.glob('models/{}_{}*'.format(args.dataset, args.model))))
     print('Loading model from path {}'.format(model_fpaths[-1]))
     model = torch.load(model_fpaths[-1])
 
-    #viz_parameters(model)
-    viz_state_seq(model)
+    if args.dataset == 'toy':
+        dataset = ToyDataset(*synthetic_data(C=3, num_points=150), max_k=20)
+    elif args.dataset == 'nbc-like':
+        dataset = ToyDataset(*nbc_data.annotations_dataset('test'), max_k=20)
+
+    viz_state_seq(model, dataset, remap=(args.model == 'unsupervised'))
+    viz_parameters(model)

@@ -11,6 +11,12 @@ import os
 from datetime import datetime
 import glob
 
+random.seed(a=0)
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
 class ToyDataset(Dataset):
     def __init__(self, labels, features, lengths, valid_classes, max_k):
         self.labels = labels
@@ -144,18 +150,16 @@ def train_supervised(train_dset, n_classes, max_k):
 
     return model
 
-def train_unsupervised(train_loader, test_loader, n_classes, max_k, epochs=25):
+def train_unsupervised(train_dset, test_dset, n_classes, max_k, epochs=10):
     parser = argparse.ArgumentParser()
     SemiMarkovModule.add_args(parser)
     args = parser.parse_args(['--sm_max_span_length', str(max_k)])
 
+    train_loader = DataLoader(train_dset, batch_size=10)
+    test_loader = DataLoader(test_dset, batch_size=10)
+
     model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
-
-    s = next(iter(train_loader))
-    features = s['features']
-    lengths = s['lengths']
-    model.initialize_gaussian(features, lengths)
-
+    model.initialize_gaussian(train_dset.features, train_dset.lengths)
     optimizer = torch.optim.Adam(model.parameters(), model.learning_rate)
 
     model.train()
@@ -240,9 +244,10 @@ def predict(model, dataloader, remap=True):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--load_model', type=str, default='')
-    parser.add_argument('--model', choices=['background', 'supervised', 'unsupervised'], default='supervised')
     parser.add_argument('--dataset', choices=['toy', 'nbc-like'], default='nbc-like')
+    parser.add_argument('--model', choices=['background', 'supervised', 'unsupervised'], default='supervised')
     parser.add_argument('--max_k', type=int, default=20)
+    parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
     if args.dataset == 'toy':
@@ -253,8 +258,6 @@ if __name__ == '__main__':
         test_dset = ToyDataset(*nbc_data.annotations_dataset('test'), max_k=args.max_k)
 
     n_classes = train_dset[0]['features'].size(1)
-    train_loader = DataLoader(train_dset, batch_size=10)
-    test_loader = DataLoader(test_dset, batch_size=10)
 
     if args.load_model == '':
         if args.model == 'background':
@@ -262,22 +265,28 @@ if __name__ == '__main__':
         elif args.model == 'supervised':
             model = train_supervised(train_dset, n_classes, args.max_k)
         elif args.model == 'unsupervised':
-            model = train_unsupervised(train_loader, test_loader, n_classes, args.max_k)
-        modelpath = 'models/{}_{}'.format(args.dataset, args.model)
-        version = glob.glob(modelpath + '*')
-        if version == []:
-            savepath = modelpath + '0.pt'
+            model = train_unsupervised(train_dset, test_dset, n_classes, args.max_k)
+
+        if args.debug:
+            print('Debug mode - not saving')
         else:
-            version_num = int(version[-1][len(modelpath):].replace('.pt', ''))
-            version_num += 1
-            savepath = '{}{}.pt'.format(modelpath, version_num)
-        print('Saving model to {}'.format(savepath))
-        torch.save(model, savepath)
+            modelpath = 'models/{}_{}'.format(args.dataset, args.model)
+            version = glob.glob(modelpath + '*')
+            if version == []:
+                savepath = modelpath + '0.pt'
+            else:
+                version_num = int(version[-1][len(modelpath):].replace('.pt', ''))
+                version_num += 1
+                savepath = '{}{}.pt'.format(modelpath, version_num)
+            print('Saving model to {}'.format(savepath))
+            torch.save(model, savepath)
     else:
         save_path = os.path.join('models', args.load_model)
         print('Loading model from {}'.format(save_path))
         model = torch.load(save_path)
 
+    train_loader = DataLoader(train_dset, batch_size=10)
+    test_loader = DataLoader(test_dset, batch_size=10)
     train_acc, train_action_acc, train_pred = predict(model, train_loader, remap=(args.model == 'unsupervised'))
     test_acc, test_action_acc, test_pred = predict(model, test_loader, remap=(args.model == 'unsupervised'))
     print('Train acc: {:.2f}; step: {:.2f}'.format(train_acc, train_action_acc))

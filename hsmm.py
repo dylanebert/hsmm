@@ -197,7 +197,7 @@ class SemiMarkovModule(torch.nn.Module):
         self.gaussian_means.data.add_(torch.from_numpy(emission_gmm.means_).to(device=self.gaussian_means.device, dtype=torch.float))
 
         self.gaussian_cov.data.zero_()
-        self.gaussian_cov.data.add_(torch.from_numpy(emission_gmm.covariances_[0]).to(device=self.gaussian_cov.device, dtype=torch.float))
+        self.gaussian_cov.data.add_(torch.diag(torch.from_numpy(emission_gmm.covariances_[0]).to(device=self.gaussian_cov.device, dtype=torch.float)))
 
     def transition_log_probs(self, valid_classes):
         """Mask out invalid classes and apply softmax to transition logits"""
@@ -385,7 +385,7 @@ class SemiMarkovModule(torch.nn.Module):
 
         return pred_spans_unmap
 
-    def log_likelihood(self, features, lengths, valid_classes_per_instance, spans=None, add_eos=True):
+    def log_likelihood(self, features, lengths, valid_classes_per_instance, add_eos=True):
         if valid_classes_per_instance is not None:
             valid_classes = valid_classes_per_instance[0]
             C = len(valid_classes)
@@ -400,11 +400,9 @@ class SemiMarkovModule(torch.nn.Module):
 
         if add_eos:
             eos_lengths = lengths + 1
-            eos_spans = self.add_eos(spans, lengths) if spans is not None else spans
             eos_C = C + 1
         else:
             eos_lengths = lengths
-            eos_spans = spans
             eoc_C = C
 
         dist = SemiMarkovCRF(scores, lengths=eos_lengths)
