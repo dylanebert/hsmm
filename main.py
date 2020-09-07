@@ -150,7 +150,7 @@ def train_supervised(train_dset, n_classes, max_k):
 
     return model
 
-def train_unsupervised(train_dset, test_dset, n_classes, max_k, epochs=10):
+def train_unsupervised(train_dset, test_dset, n_classes, max_k, epochs=999):
     parser = argparse.ArgumentParser()
     SemiMarkovModule.add_args(parser)
     args = parser.parse_args(['--sm_max_span_length', str(max_k)])
@@ -163,6 +163,9 @@ def train_unsupervised(train_dset, test_dset, n_classes, max_k, epochs=10):
     optimizer = torch.optim.Adam(model.parameters(), model.learning_rate)
 
     model.train()
+    PATIENCE = 5
+    k = 0
+    best_loss = 1e9
     for epoch in range(epochs):
         losses = []
         for batch in train_loader:
@@ -181,6 +184,17 @@ def train_unsupervised(train_dset, test_dset, n_classes, max_k, epochs=10):
         test_remap_acc, test_action_remap_acc, test_pred = predict(model, test_loader, remap=True)
         print('epoch: {}, avg loss: {:.4f}, train acc: {:.2f}, test acc: {:.2f}, train step acc: {:.2f}, test step acc: {:.2f}'.format(
             epoch, np.mean(losses), train_remap_acc, test_remap_acc, train_action_remap_acc, test_action_remap_acc))
+        if np.mean(losses) < best_loss:
+            best_loss = np.mean(losses) - 1e-4
+            k = 0
+        else:
+            k += 1
+            if k > PATIENCE:
+                print('Loss didn\'t improve {}, stopping'.format(k))
+                break
+            else:
+                print('Loss didn\'t improve {}'.format(k))
+
 
     return model
 
@@ -251,8 +265,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.dataset == 'toy':
-        train_dset = ToyDataset(*synthetic_data(C=3, num_points=150), max_k=args.max_k)
-        test_dset = ToyDataset(*synthetic_data(C=3, num_points=50), max_k=args.max_k)
+        train_dset = ToyDataset(*synthetic_data(C=3, num_points=10000), max_k=args.max_k)
+        test_dset = ToyDataset(*synthetic_data(C=3, num_points=10), max_k=args.max_k)
     elif args.dataset == 'nbc-like':
         train_dset = ToyDataset(*nbc_data.annotations_dataset('train'), max_k=args.max_k)
         test_dset = ToyDataset(*nbc_data.annotations_dataset('test'), max_k=args.max_k)
