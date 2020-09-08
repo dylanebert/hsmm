@@ -272,7 +272,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.dataset == 'toy':
-        train_dset = ToyDataset(*synthetic_data(C=3, num_points=10000), max_k=args.max_k)
+        train_dset = ToyDataset(*synthetic_data(C=3, num_points=1000), max_k=args.max_k)
         test_dset = ToyDataset(*synthetic_data(C=3, num_points=10), max_k=args.max_k)
     elif args.dataset == 'nbc-like':
         train_dset = ToyDataset(*nbc_data.annotations_dataset('train'), max_k=args.max_k)
