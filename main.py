@@ -16,6 +16,7 @@ torch.manual_seed(0)
 torch.cuda.manual_seed(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
+device = torch.device('cuda')
 
 class ToyDataset(Dataset):
     def __init__(self, labels, features, lengths, valid_classes, max_k):
@@ -75,7 +76,7 @@ def synthetic_data(num_points=200, C=3, N=20, K=5, classes_per_seq=None):
             Description of parameter `shift_constant`.
         """
         batch_size_, N_ = class_labels.size()
-        f = torch.randn((batch_size_, N_, C))
+        f = torch.randn((batch_size_, N_, C)).to(class_labels.device)
         shift = torch.zeros_like(f)
         shift.scatter_(2, class_labels.unsqueeze(2), shift_constant)
         return shift + f
@@ -104,10 +105,10 @@ def synthetic_data(num_points=200, C=3, N=20, K=5, classes_per_seq=None):
             current_step += 1
         seq = seq[:N]
         labels.append(seq)
-    labels = torch.LongTensor(labels)
-    features = make_features(labels, shift_constant=1.)
-    lengths = torch.LongTensor(lengths)
-    valid_classes = [torch.LongTensor(c) for c in valid_classes]
+    labels = torch.LongTensor(labels).to(device)
+    features = make_features(labels, shift_constant=1.).to(device)
+    lengths = torch.LongTensor(lengths).to(device)
+    valid_classes = [torch.LongTensor(c).to(device) for c in valid_classes]
     return labels, features, lengths, valid_classes
 
 def optimal_map(pred, true, possible):
@@ -120,9 +121,9 @@ def optimal_map(pred, true, possible):
             table[i, j] = (pred[mask] == l).sum()
     best_true, best_pred = linear_sum_assignment(-table)
     mapping = {labels[p]: labels[g] for p, g in zip(best_pred, best_true)}
-    remapped = pred.clone()
+    remapped = pred.cpu().clone()
     remapped.apply_(lambda label: mapping[label])
-    return remapped, mapping
+    return remapped.to(device), mapping
 
 def untrained_model(n_classes, max_k):
     parser = argparse.ArgumentParser()
@@ -130,6 +131,8 @@ def untrained_model(n_classes, max_k):
     args = parser.parse_args(['--sm_max_span_length', str(max_k)])
 
     model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
+    if device == torch.device('cuda'):
+        model.cuda()
 
     return model
 
@@ -139,6 +142,8 @@ def train_supervised(train_dset, n_classes, max_k):
     args = parser.parse_args(['--sm_max_span_length', str(max_k)])
 
     model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
+    if device == torch.device('cuda'):
+        model.cuda()
 
     train_features = []
     train_labels = []
@@ -159,6 +164,8 @@ def train_unsupervised(train_dset, test_dset, n_classes, max_k, epochs=999):
     test_loader = DataLoader(test_dset, batch_size=10)
 
     model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
+    if device == torch.device('cuda'):
+        model.cuda()
     model.initialize_gaussian(train_dset.features, train_dset.lengths)
     optimizer = torch.optim.Adam(model.parameters(), model.learning_rate)
 
@@ -225,7 +232,7 @@ def predict(model, dataloader, remap=True):
 
         for i in range(batch_size):
             if valid_classes is None:
-                valid_classes_ = torch.LongTensor(np.array(list(range(model.n_classes)), dtype=int))
+                valid_classes_ = torch.LongTensor(np.array(list(range(model.n_classes)), dtype=int)).to(device)
             else:
                 valid_classes_ = valid_classes[i]
             pred_remapped, mapping = optimal_map(pred_labels_trim[i], gold_labels_trim[i], valid_classes_)

@@ -383,7 +383,7 @@ class SemiMarkovModule(torch.nn.Module):
             mapping[C] = self.n_classes
             pred_spans_unmap.apply_(lambda x: mapping[x])
 
-        return pred_spans_unmap
+        return pred_spans_unmap.to(features.device)
 
     def log_likelihood(self, features, lengths, valid_classes_per_instance, add_eos=True):
         if valid_classes_per_instance is not None:
@@ -449,6 +449,7 @@ def semimarkov_sufficient_stats(feature_list, label_list, covariance_type, n_cla
     span_transition_counts = np.zeros((n_classes, n_classes), dtype=np.float32)
     instance_count = 0
     for X, labels in zip(feature_list, label_list):
+        X = X.cpu(); labels = labels.cpu()
         X_l.append(X)
         r = np.zeros((X.shape[0], n_classes))
         r[np.arange(X.shape[0]), labels] = 1
