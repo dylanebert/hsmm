@@ -163,15 +163,22 @@ def train_unsupervised(train_dset, test_dset, n_classes, max_k, epochs=999):
     train_loader = DataLoader(train_dset, batch_size=10)
     test_loader = DataLoader(test_dset, batch_size=10)
 
-    model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
+    model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=False)
     if device == torch.device('cuda'):
         model.cuda()
     model.initialize_gaussian(train_dset.features, train_dset.lengths)
     optimizer = torch.optim.Adam(model.parameters(), model.learning_rate)
 
+    #supervised overrides for debugging
+    train_features = []
+    train_labels = []
+    for i in range(len(train_dset)):
+        sample = train_dset[i]
+        train_features.append(sample['features'])
+        train_labels.append(sample['labels'])
+    model.initialize_supervised(train_features, train_labels, overrides=['mean', 'cov'])
+
     model.train()
-    PATIENCE = 5
-    k = 0
     best_loss = 1e9
     for epoch in range(epochs):
         losses = []
@@ -192,16 +199,10 @@ def train_unsupervised(train_dset, test_dset, n_classes, max_k, epochs=999):
         print('epoch: {}, avg loss: {:.4f}, train acc: {:.2f}, test acc: {:.2f}, train step acc: {:.2f}, test step acc: {:.2f}'.format(
             epoch, np.mean(losses), train_remap_acc, test_remap_acc, train_action_remap_acc, test_action_remap_acc))
         if np.mean(losses) < best_loss:
-            best_loss = np.mean(losses) - 1e-4
-            k = 0
+            best_loss = np.mean(losses) - 1e-7
         else:
-            k += 1
-            if k > PATIENCE:
-                print('Loss didn\'t improve {}, stopping'.format(k))
-                break
-            else:
-                print('Loss didn\'t improve {}'.format(k))
-
+            print('Loss didn\'t improve, stopping')
+            break
 
     return model
 
@@ -265,14 +266,15 @@ def predict(model, dataloader, remap=True):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--load_model', type=str, default='')
-    parser.add_argument('--dataset', choices=['toy', 'nbc-like'], default='nbc-like')
-    parser.add_argument('--model', choices=['background', 'supervised', 'unsupervised'], default='supervised')
+    parser.add_argument('--dataset', choices=['toy', 'nbc-like'], default='toy')
+    parser.add_argument('--model', choices=['background', 'supervised', 'unsupervised'], default='unsupervised')
     parser.add_argument('--max_k', type=int, default=20)
+    parser.add_argument('--epochs', type=int, default=999)
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
     if args.dataset == 'toy':
-        train_dset = ToyDataset(*synthetic_data(C=3, num_points=1000), max_k=args.max_k)
+        train_dset = ToyDataset(*synthetic_data(C=3, num_points=100), max_k=args.max_k)
         test_dset = ToyDataset(*synthetic_data(C=3, num_points=10), max_k=args.max_k)
     elif args.dataset == 'nbc-like':
         train_dset = ToyDataset(*nbc_data.annotations_dataset('train'), max_k=args.max_k)
@@ -286,7 +288,7 @@ if __name__ == '__main__':
         elif args.model == 'supervised':
             model = train_supervised(train_dset, n_classes, args.max_k)
         elif args.model == 'unsupervised':
-            model = train_unsupervised(train_dset, test_dset, n_classes, args.max_k)
+            model = train_unsupervised(train_dset, test_dset, n_classes, args.max_k, epochs=args.epochs)
 
         if args.debug:
             print('Debug mode - not saving')

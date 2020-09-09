@@ -170,6 +170,36 @@ class SemiMarkovModule(torch.nn.Module):
         self.gaussian_means.data.add_(mean.expand((self.n_classes, self.feature_dim)))
         self.gaussian_cov.data = torch.diag(feats.var(dim=0))
 
+    def initialize_supervised(self, feature_list, label_list, overrides=['mean', 'cov', 'init', 'trans', 'lengths']):
+        emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, covariance_type='tied_diag', n_classes=self.n_classes, max_k=self.max_k)
+        if 'init' in overrides:
+            init_probs = (stats['span_start_counts'] + self.args.sm_supervised_state_smoothing) /\
+                float(stats['instance_count'] + self.args.sm_supervised_state_smoothing * self.n_classes)
+            init_probs[np.isnan(init_probs)] = 0
+            self.init_logits.data.zero_()
+            self.init_logits.data.add_(torch.from_numpy(init_probs).to(device=self.init_logits.device).log())
+            self.init_logits.requires_grad = False
+        if 'trans' in overrides:
+            smoothed_trans_counts = stats['span_transition_counts'] + self.args.sm_supervised_state_smoothing
+            trans_probs = smoothed_trans_counts / smoothed_trans_counts.sum(axis=0)[None, :]
+            trans_probs[np.isnan(trans_probs)] = 0
+            self.transition_logits.data.zero_()
+            self.transition_logits.data.add_(torch.from_numpy(trans_probs).to(device=self.transition_logits.device).log())
+            self.transition_logits.requires_grad = False
+        if 'lengths' in overrides:
+            mean_lengths = (stats['span_lengths'] + self.args.sm_supervised_length_smoothing) /\
+                (stats['span_counts'] + self.args.sm_supervised_length_smoothing)
+            self.poisson_log_rates.data.zero_()
+            self.poisson_log_rates.data.add_(torch.from_numpy(mean_lengths).to(device=self.poisson_log_rates.device).log())
+            self.poisson_log_rates.requires_grad = False
+        if 'mean' in overrides:
+            self.gaussian_means.data.zero_()
+            self.gaussian_means.data.add_(torch.from_numpy(emission_gmm.means_).to(device=self.gaussian_means.device, dtype=torch.float))
+            self.gaussian_means.requires_grad = False
+        if 'cov' in overrides:
+            self.gaussian_cov.data.zero_()
+            self.gaussian_cov.data.add_(torch.diag(torch.from_numpy(emission_gmm.covariances_[0]).to(device=self.gaussian_cov.device, dtype=torch.float)))
+
     def fit_supervised(self, feature_list, label_list):
         if self.feature_projector is not None:
             raise NotImplementedError('fit_supervised with feature projector')

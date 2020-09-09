@@ -9,10 +9,10 @@ import os
 import json
 import sys
 
-assert sys.platform in ['win32', 'linux'], 'platform not recognized'
 if sys.platform == 'win32':
     NBC_ROOT = 'D:/nbc/'
 else:
+    assert sys.platform == 'linux', sys.platform
     NBC_ROOT = '/users/debert/data/datasets/nbc/'
 
 def make_features(class_labels, n_classes, shift_constant=1.0):
