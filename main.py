@@ -1,15 +1,16 @@
 import random
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
-from hsmm import SemiMarkovModule, labels_to_spans, spans_to_labels
+from torch.utils.data import DataLoader
+from hsmm import SemiMarkovModule
 import argparse
 from tqdm import tqdm
 from scipy.optimize import linear_sum_assignment
-import nbc_data
 import os
 from datetime import datetime
 import glob
+import data
+from data import labels_to_spans, spans_to_labels
 
 random.seed(a=0)
 torch.manual_seed(0)
@@ -17,99 +18,6 @@ torch.cuda.manual_seed(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 device = torch.device('cuda')
-
-class ToyDataset(Dataset):
-    def __init__(self, labels, features, lengths, valid_classes, max_k):
-        self.labels = labels
-        self.features = features
-        self.lengths = lengths
-        self.valid_classes = valid_classes
-        self.max_k = max_k
-
-    def __len__(self):
-        return self.labels.size(0)
-
-    def __getitem__(self, index):
-        labels = self.labels[index]
-        spans = labels_to_spans(labels.unsqueeze(0), max_k=self.max_k).squeeze(0)
-        if self.valid_classes is None:
-            return {
-                'labels': self.labels[index],
-                'features': self.features[index],
-                'lengths': self.lengths[index],
-                'spans': spans
-            }
-        else:
-            return {
-                'labels': self.labels[index],
-                'features': self.features[index],
-                'lengths': self.lengths[index],
-                'valid_classes': self.valid_classes[index],
-                'spans': spans
-            }
-
-def synthetic_data(num_points=200, C=3, N=20, K=5, classes_per_seq=None):
-    """Creates synthetic data consisting of semimarkov sequences, featurized as one-hots plus noise
-
-    Parameters
-    ----------
-    num_points : int
-        number of sequences
-    C : int
-        total number of classes
-    N : int
-        length of each sequence
-    K : int
-        max action length (same class repeating)
-    classes_per_seq : int
-        max number of classes present in each sequence
-    """
-
-    def make_features(class_labels, shift_constant=1.0):
-        """converts labels to one-hot plus some gaussian noise
-
-        Parameters
-        ----------
-        class_labels : sequences of labels
-            Description of parameter `class_labels`.
-        shift_constant : type
-            Description of parameter `shift_constant`.
-        """
-        batch_size_, N_ = class_labels.size()
-        f = torch.randn((batch_size_, N_, C)).to(class_labels.device)
-        shift = torch.zeros_like(f)
-        shift.scatter_(2, class_labels.unsqueeze(2), shift_constant)
-        return shift + f
-
-    labels = []
-    lengths = []
-    valid_classes = []
-    for i in range(num_points):
-        if i == 0:
-            length = N
-        else:
-            length = random.randint(K, N)
-        lengths.append(length)
-        seq = []
-        current_step = 0
-        if classes_per_seq is not None:
-            assert classes_per_seq <= C
-            valid_classes_ = np.random.choice(list(range(C)), size=classes_per_seq, replace=False)
-        else:
-            valid_classes_ = list(range(C))
-        valid_classes.append(valid_classes_)
-        while len(seq) < N:
-            step_len = random.randint(1, K-1)
-            seq_ = valid_classes_[current_step % len(valid_classes_)]
-            seq.extend([seq_] * step_len)
-            current_step += 1
-        seq = seq[:N]
-        labels.append(seq)
-    labels = torch.LongTensor(labels).to(device)
-    features = make_features(labels, shift_constant=1.).to(device)
-    lengths = torch.LongTensor(lengths).to(device)
-    valid_classes = [torch.LongTensor(c).to(device) for c in valid_classes]
-    return labels, features, lengths, valid_classes
 
 def optimal_map(pred, true, possible):
     assert all(l in possible for l in pred) and all(l in possible for l in true)
@@ -170,13 +78,13 @@ def train_unsupervised(train_dset, test_dset, n_classes, max_k, epochs=999):
     optimizer = torch.optim.Adam(model.parameters(), model.learning_rate)
 
     #supervised overrides for debugging
-    train_features = []
+    '''train_features = []
     train_labels = []
     for i in range(len(train_dset)):
         sample = train_dset[i]
         train_features.append(sample['features'])
         train_labels.append(sample['labels'])
-    model.initialize_supervised(train_features, train_labels, overrides=['mean', 'cov'])
+    model.initialize_supervised(train_features, train_labels, overrides=['mean', 'cov'])'''
 
     model.train()
     best_loss = 1e9
@@ -265,48 +173,35 @@ def predict(model, dataloader, remap=True):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--load_model', type=str, default='')
-    parser.add_argument('--dataset', choices=['toy', 'nbc-like'], default='toy')
-    parser.add_argument('--model', choices=['background', 'supervised', 'unsupervised'], default='unsupervised')
-    parser.add_argument('--max_k', type=int, default=20)
+    data.add_args(parser)
+    parser.add_argument('--model', choices=['untrained', 'supervised', 'unsupervised'], default='unsupervised')
     parser.add_argument('--epochs', type=int, default=999)
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
-    if args.dataset == 'toy':
-        train_dset = ToyDataset(*synthetic_data(C=3, num_points=100), max_k=args.max_k)
-        test_dset = ToyDataset(*synthetic_data(C=3, num_points=10), max_k=args.max_k)
-    elif args.dataset == 'nbc-like':
-        train_dset = ToyDataset(*nbc_data.annotations_dataset('train'), max_k=args.max_k)
-        test_dset = ToyDataset(*nbc_data.annotations_dataset('test'), max_k=args.max_k)
-
+    train_dset, test_dset = data.dataset_from_args(args)
     n_classes = train_dset[0]['features'].size(1)
 
-    if args.load_model == '':
-        if args.model == 'background':
-            model = untrained_model(n_classes, args.max_k)
-        elif args.model == 'supervised':
-            model = train_supervised(train_dset, n_classes, args.max_k)
-        elif args.model == 'unsupervised':
-            model = train_unsupervised(train_dset, test_dset, n_classes, args.max_k, epochs=args.epochs)
+    if args.model == 'untrained':
+        model = untrained_model(n_classes, args.max_k)
+    elif args.model == 'supervised':
+        model = train_supervised(train_dset, n_classes, args.max_k)
+    elif args.model == 'unsupervised':
+        model = train_unsupervised(train_dset, test_dset, n_classes, args.max_k, epochs=args.epochs)
 
-        if args.debug:
-            print('Debug mode - not saving')
-        else:
-            modelpath = 'models/{}_{}'.format(args.dataset, args.model)
-            version = glob.glob(modelpath + '*')
-            if version == []:
-                savepath = modelpath + '0.pt'
-            else:
-                version_num = int(version[-1][len(modelpath):].replace('.pt', ''))
-                version_num += 1
-                savepath = '{}{}.pt'.format(modelpath, version_num)
-            print('Saving model to {}'.format(savepath))
-            torch.save(model, savepath)
+    if args.debug:
+        print('Debug mode - not saving')
     else:
-        save_path = os.path.join('models', args.load_model)
-        print('Loading model from {}'.format(save_path))
-        model = torch.load(save_path)
+        modelpath = 'models/{}_{}'.format(args.dataset, args.model)
+        version = glob.glob(modelpath + '*')
+        if version == []:
+            savepath = modelpath + '0.pt'
+        else:
+            version_num = int(version[-1][len(modelpath):].replace('.pt', ''))
+            version_num += 1
+            savepath = '{}{}.pt'.format(modelpath, version_num)
+        print('Saving model to {}'.format(savepath))
+        torch.save(model, savepath)
 
     train_loader = DataLoader(train_dset, batch_size=10)
     test_loader = DataLoader(test_dset, batch_size=10)

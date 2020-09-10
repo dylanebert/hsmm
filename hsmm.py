@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch_struct import SemiMarkovCRF
 import argparse
 from sklearn.mixture import GaussianMixture
+from data import labels_to_spans, spans_to_labels, rle_spans
 
 class FeedForward(torch.nn.Module):
     @classmethod
@@ -513,79 +514,11 @@ def semimarkov_sufficient_stats(feature_list, label_list, covariance_type, n_cla
         'instance_count': instance_count
     }
 
-def rle_spans(spans, lengths):
-    b, _ = spans.size()
-    all_rle = []
-    for i in range(b):
-        rle_ = []
-        spans_ = spans[i, :lengths[i]]
-        symbol_ = None
-        count = 0
-        for symbol in spans_:
-            symbol = symbol.item()
-            if symbol_ is None or symbol != -1:
-                if symbol_ is not None:
-                    assert count > 0
-                    rle_.append((symbol_, count))
-                count = 0
-                symbol_ = symbol
-            count += 1
-        if symbol_ is not None:
-            assert count > 0
-            rle_.append((symbol_, count))
-        assert sum(count for _, count in rle_) == lengths[i]
-        all_rle.append(rle_)
-    return all_rle
-
 def get_diagonal_covariances(data):
     model = GaussianMixture(n_components=1, covariance_type='diag')
     responsibilities = np.ones((data.shape[0], 1))
     model._initialize(data, responsibilities)
     return model.covariances_, model.precisions_cholesky_
-
-def labels_to_spans(labels, max_k):
-    """Encodes a sequence by masking repeated labels, e.g. [1 1 2 2 ] -> [1 -1 2 -1]
-
-    Parameters
-    ----------
-    labels : torch obj
-        label sequence
-    max_k : int
-        max number of same symbol in a row
-
-    Returns
-    -------
-    torch obj
-        encoded sequence
-
-    """
-    _, N = labels.size()
-    prev = labels[:, 0]
-    values = [prev.unsqueeze(1)]
-    lengths = torch.ones_like(prev)
-    for n in range(1, N):
-        label = labels[:, n]
-        same_symbol = (prev == label)
-        if max_k is not None:
-            same_symbol = same_symbol & (lengths < max_k - 1)
-        encoded = torch.where(same_symbol, torch.full([1], -1, device=same_symbol.device, dtype=torch.long), label)
-        lengths = torch.where(same_symbol, lengths, torch.full([1], 0, device=same_symbol.device, dtype=torch.long))
-        lengths += 1
-        values.append(encoded.unsqueeze(1))
-        prev = label
-    return torch.cat(values, dim=1)
-
-def spans_to_labels(spans):
-    _, N = spans.size()
-    labels = spans[:, 0]
-    assert (labels != -1).all()
-    values = [labels.unsqueeze(1)]
-    for n in range(1, N):
-        span = spans[:, n]
-        labels_ = torch.where(span == -1, labels, span)
-        values.append(labels_.unsqueeze(1))
-        labels = labels_
-    return torch.cat(values, dim=1)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
