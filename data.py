@@ -27,7 +27,8 @@ def dataset_from_args(args):
         test_dset = Dataset(*nbc_annotations_dataset('test'), max_k=args.max_k, device=torch.device(args.device))
     else:
         assert args.dataset == 'nbc_synthetic'
-        raise NotImplementedError('nbc_synthetic')
+        train_dset = Dataset(*nbc_synthetic_dataset(args.n_train), max_k=args.max_k, device=torch.device(args.device))
+        test_dset = Dataset(*nbc_synthetic_dataset(args.n_test), max_k=args.max_k, device=torch.device(args.device))
     return train_dset, test_dset
 
 class Dataset(torch.utils.data.Dataset):
@@ -163,6 +164,42 @@ def nbc_annotations_dataset(mode='train', subsample=45):
     valid_classes = [torch.LongTensor(c) for c in valid_classes]
     return labels, features, lengths, valid_classes
 
+def nbc_synthetic_dataset(num_points=100):
+    min_seq_len = 100
+    max_seq_len = 1000
+    min_idle_len = 10
+    max_idle_len = 100
+    min_action_len = 1
+    max_action_len = 5
+    classes = [0, 1, 2, 3] #idle, reach, pick, put
+
+    labels = []
+    lengths = []
+    valid_classes = []
+    for i in range(num_points):
+        if i == 0:
+            length = max_seq_len
+        else:
+            length = random.randint(min_seq_len, max_seq_len)
+        lengths.append(length)
+        seq = []
+        valid_classes.append(classes)
+        while len(seq) < max_seq_len:
+            seq.extend([0] * random.randint(min_idle_len, max_idle_len)) #idle segment
+            seq.extend([1] * random.randint(min_action_len, max_action_len)) #reach segment
+            if random.random() < .7:
+                seq.extend([2] * random.randint(min_action_len, max_action_len))
+                if random.random() < .7:
+                    seq.extend([0] * random.randint(min_action_len, max_action_len))
+                    seq.extend([3] * random.randint(min_action_len, max_action_len))
+        seq = seq[:max_seq_len]
+        labels.append(seq)
+    labels = torch.LongTensor(labels)
+    features = make_features(labels, len(classes), shift_constant=1.)
+    lengths = torch.LongTensor(lengths)
+    valid_classes = [torch.LongTensor(c) for c in valid_classes]
+    return labels, features, lengths, valid_classes
+
 def rle_spans(spans, lengths):
     b, _ = spans.size()
     all_rle = []
@@ -222,4 +259,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     train_dset, test_dset = dataset_from_args(args)
-    print(train_dset[0])
+    print(train_dset[0]['labels'])
