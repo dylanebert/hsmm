@@ -3,11 +3,10 @@ import torch
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from hsmm import SemiMarkovModule
+from hsmm import SemiMarkovModule, optimal_map
 import glob
 import argparse
-from main import optimal_map, labels_to_spans, spans_to_labels, ToyDataset, synthetic_data
-import nbc_data
+import data
 
 def viz_parameters(model):
     means = model.gaussian_means.detach().cpu().numpy()
@@ -74,8 +73,8 @@ def viz_state_seq(model, dataset, remap=True):
     gold_spans = gold_spans[:, :N_]
 
     pred_spans = model.viterbi(features, lengths, valid_classes_per_instance=valid_classes, add_eos=True)
-    gold_labels = spans_to_labels(gold_spans)
-    pred_labels = spans_to_labels(pred_spans)
+    gold_labels = data.spans_to_labels(gold_spans)
+    pred_labels = data.spans_to_labels(pred_spans)
 
     gold_labels_trim = model.trim(gold_labels, lengths)
     pred_labels_trim = model.trim(pred_labels, lengths)
@@ -106,10 +105,12 @@ def viz_state_seq(model, dataset, remap=True):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', choices=['toy', 'nbc-like'], default='toy')
+    data.add_args(parser)
     parser.add_argument('--model', choices=['background', 'supervised', 'unsupervised'], default='unsupervised')
     parser.add_argument('--path', help='override model path', type=str, default='')
     args = parser.parse_args()
+
+    _, dataset = data.dataset_from_args(args)
 
     if args.path == '':
         model_fpaths = sorted(list(glob.glob('models/{}_{}*'.format(args.dataset, args.model))))
@@ -117,11 +118,6 @@ if __name__ == '__main__':
         model = torch.load(model_fpaths[-1])
     else:
         model = torch.load('models/' + args.path)
-
-    if args.dataset == 'toy':
-        dataset = ToyDataset(*synthetic_data(C=3, num_points=150), max_k=20)
-    elif args.dataset == 'nbc-like':
-        dataset = ToyDataset(*nbc_data.annotations_dataset('test'), max_k=20)
 
     viz_state_seq(model, dataset, remap=(args.model == 'unsupervised'))
     viz_parameters(model)

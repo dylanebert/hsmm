@@ -7,12 +7,14 @@ import random
 import argparse
 import glob
 import json
+import nbc
 
-assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT env variable'
+assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT envvar'
 NBC_ROOT = os.environ['NBC_ROOT']
 
 def add_args(parser):
-    parser.add_argument('--dataset', choices=['toy', 'nbc_annotations', 'nbc_synthetic'], default='toy')
+    nbc.add_args(parser)
+    parser.add_argument('--dataset', choices=['toy', 'nbc', 'nbc_annotations', 'nbc_synthetic'], default='toy')
     parser.add_argument('--max_k', help='max segment length', type=int, default=20)
     parser.add_argument('--device', choices=['cpu', 'cuda'], default='cuda')
     parser.add_argument('--n_train', help='number of train instances (for generated datasets)', type=int, default=100)
@@ -22,6 +24,8 @@ def dataset_from_args(args):
     if args.dataset == 'toy':
         train_dset = Dataset(*synthetic_data(args.n_train), max_k=args.max_k, device=torch.device(args.device))
         test_dset = Dataset(*synthetic_data(args.n_test), max_k=args.max_k, device=torch.device(args.device))
+    elif args.dataset == 'nbc':
+        raise NotImplementedError('nbc')
     elif args.dataset == 'nbc_annotations':
         train_dset = Dataset(*nbc_annotations_dataset('train'), max_k=args.max_k, device=torch.device(args.device))
         test_dset = Dataset(*nbc_annotations_dataset('test'), max_k=args.max_k, device=torch.device(args.device))
@@ -165,12 +169,10 @@ def nbc_annotations_dataset(mode='train', subsample=45):
     return labels, features, lengths, valid_classes
 
 def nbc_synthetic_dataset(num_points=100):
-    min_seq_len = 100
-    max_seq_len = 1000
-    min_idle_len = 10
-    max_idle_len = 100
-    min_action_len = 1
-    max_action_len = 5
+    min_seq_len = 20
+    max_seq_len = 50
+    idle_expectation = 10
+    action_expectation = 2
     classes = [0, 1, 2, 3] #idle, reach, pick, put
 
     labels = []
@@ -185,13 +187,14 @@ def nbc_synthetic_dataset(num_points=100):
         seq = []
         valid_classes.append(classes)
         while len(seq) < max_seq_len:
-            seq.extend([0] * random.randint(min_idle_len, max_idle_len)) #idle segment
-            seq.extend([1] * random.randint(min_action_len, max_action_len)) #reach segment
+            seq.extend([0] * np.random.poisson(idle_expectation)) #idle
+            seq.extend([1] * np.random.poisson(action_expectation)) #reach
             if random.random() < .7:
-                seq.extend([2] * random.randint(min_action_len, max_action_len))
+                seq.extend([2] * np.random.poisson(action_expectation)) #pick
                 if random.random() < .7:
-                    seq.extend([0] * random.randint(min_action_len, max_action_len))
-                    seq.extend([3] * random.randint(min_action_len, max_action_len))
+                    if random.random() < .7:
+                        seq.extend([0] * np.random.poisson(action_expectation)) #gap between pick/put
+                    seq.extend([3] * np.random.poisson(action_expectation)) #put
         seq = seq[:max_seq_len]
         labels.append(seq)
     labels = torch.LongTensor(labels)

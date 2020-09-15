@@ -5,6 +5,7 @@ from torch_struct import SemiMarkovCRF
 import argparse
 from sklearn.mixture import GaussianMixture
 from data import labels_to_spans, spans_to_labels, rle_spans
+from scipy.optimize import linear_sum_assignment
 
 class FeedForward(torch.nn.Module):
     @classmethod
@@ -115,7 +116,6 @@ class SemiMarkovModule(torch.nn.Module):
         parser.add_argument('--sm_max_span_length', type=int, default=20)
         parser.add_argument('--sm_supervised_state_smoothing', type=float, default=1e-2)
         parser.add_argument('--sm_supervised_length_smoothing', type=float, default=1e-1)
-        parser.add_argument('--sm_supervised_method', choices=['closed_form', 'gradient_based', 'closed-then-gradient'], default='closed_form')
         parser.add_argument('--sm_feature_projection', action='store_true')
         parser.add_argument('--sm_init_non_projection_parameters_from')
         parser.add_argument('--lr', type=float, default=1e-1)
@@ -513,6 +513,20 @@ def semimarkov_sufficient_stats(feature_list, label_list, covariance_type, n_cla
         'span_transition_counts': span_transition_counts,
         'instance_count': instance_count
     }
+
+def optimal_map(pred, true, possible):
+    assert all(l in possible for l in pred) and all(l in possible for l in true)
+    table = np.zeros((len(possible), len(possible)))
+    labels = possible.detach().cpu().numpy()
+    for i, label in enumerate(labels):
+        mask = true == label
+        for j, l in enumerate(labels):
+            table[i, j] = (pred[mask] == l).sum()
+    best_true, best_pred = linear_sum_assignment(-table)
+    mapping = {labels[p]: labels[g] for p, g in zip(best_pred, best_true)}
+    remapped = pred.cpu().clone()
+    remapped.apply_(lambda label: mapping[label])
+    return remapped, mapping
 
 def get_diagonal_covariances(data):
     model = GaussianMixture(n_components=1, covariance_type='diag')

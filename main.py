@@ -2,10 +2,9 @@ import random
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from hsmm import SemiMarkovModule
+from hsmm import SemiMarkovModule, optimal_map
 import argparse
 from tqdm import tqdm
-from scipy.optimize import linear_sum_assignment
 import os
 from datetime import datetime
 import glob
@@ -18,20 +17,6 @@ torch.cuda.manual_seed(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 device = torch.device('cuda')
-
-def optimal_map(pred, true, possible):
-    assert all(l in possible for l in pred) and all(l in possible for l in true)
-    table = np.zeros((len(possible), len(possible)))
-    labels = possible.detach().cpu().numpy()
-    for i, label in enumerate(labels):
-        mask = true == label
-        for j, l in enumerate(labels):
-            table[i, j] = (pred[mask] == l).sum()
-    best_true, best_pred = linear_sum_assignment(-table)
-    mapping = {labels[p]: labels[g] for p, g in zip(best_pred, best_true)}
-    remapped = pred.cpu().clone()
-    remapped.apply_(lambda label: mapping[label])
-    return remapped.to(device), mapping
 
 def untrained_model(n_classes, max_k):
     parser = argparse.ArgumentParser()
@@ -71,7 +56,7 @@ def train_unsupervised(train_dset, test_dset, n_classes, max_k, epochs=999):
     train_loader = DataLoader(train_dset, batch_size=10)
     test_loader = DataLoader(test_dset, batch_size=10)
 
-    model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=False)
+    model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
     if device == torch.device('cuda'):
         model.cuda()
     model.initialize_gaussian(train_dset.features, train_dset.lengths)
@@ -145,6 +130,7 @@ def predict(model, dataloader, remap=True):
             else:
                 valid_classes_ = valid_classes[i]
             pred_remapped, mapping = optimal_map(pred_labels_trim[i], gold_labels_trim[i], valid_classes_)
+            pred_remapped = pred_remapped.to(device)
             item = {
                 'length': lengths[i].item(),
                 'gold_spans': gold_spans[i],
