@@ -64,48 +64,62 @@ def viz_parameters(model):
 def viz_state_seq(model, dataset, remap=True):
     features = dataset[0]['features'].unsqueeze(0)
     lengths = dataset[0]['lengths'].unsqueeze(0)
-    gold_spans = dataset[0]['spans'].unsqueeze(0)
-    valid_classes = dataset[0]['valid_classes'].unsqueeze(0)
+    if 'valid_classes' in dataset[0]:
+        valid_classes = dataset[0]['valid_classes'].unsqueeze(0)
+    else:
+        valid_classes = None
 
     batch_size = features.size(0)
     N_ = lengths.max().item()
     features = features[:, :N_, :]
-    gold_spans = gold_spans[:, :N_]
 
     pred_spans = model.viterbi(features, lengths, valid_classes_per_instance=valid_classes, add_eos=True)
-    gold_labels = data.spans_to_labels(gold_spans)
     pred_labels = data.spans_to_labels(pred_spans)
-
-    gold_labels_trim = model.trim(gold_labels, lengths)
     pred_labels_trim = model.trim(pred_labels, lengths)
 
-    if remap:
-        pred_remapped, mapping = optimal_map(pred_labels_trim[0], gold_labels_trim[0], valid_classes[0])
-        gold = gold_labels_trim[0].detach().cpu().numpy()[np.newaxis, :]
-        pred = pred_remapped.detach().cpu().numpy()[np.newaxis, :]
+    if 'spans' in dataset[0]:
+        gold_spans = dataset[0]['spans'].unsqueeze(0)
+        gold_spans = gold_spans[:, :N_]
+        gold_labels = data.spans_to_labels(gold_spans)
+        gold_labels_trim = model.trim(gold_labels, lengths)
+
+        if remap:
+            pred_remapped, mapping = optimal_map(pred_labels_trim[0], gold_labels_trim[0], valid_classes[0])
+            gold = gold_labels_trim[0].detach().cpu().numpy()[np.newaxis, :]
+            pred = pred_remapped.detach().cpu().numpy()[np.newaxis, :]
+        else:
+            gold = gold_labels_trim[0].detach().cpu().numpy()[np.newaxis, :]
+            pred = pred_labels_trim[0].detach().cpu().numpy()[np.newaxis, :]
+
+        gold = np.tile(gold, (N_ // 10, 1))
+        pred = np.tile(pred, (N_ // 10, 1))
+
+        fig = plt.figure()
+
+        ax1 = fig.add_subplot(211)
+        ax1.imshow(gold)
+        ax1.axis('off')
+
+        ax2 = fig.add_subplot(212)
+        ax2.imshow(pred)
+        ax2.axis('off')
+
+        plt.tight_layout()
+        plt.show()
     else:
-        gold = gold_labels_trim[0].detach().cpu().numpy()[np.newaxis, :]
         pred = pred_labels_trim[0].detach().cpu().numpy()[np.newaxis, :]
-
-    gold = np.tile(gold, (N_ // 10, 1))
-    pred = np.tile(pred, (N_ // 10, 1))
-
-    fig = plt.figure()
-
-    ax1 = fig.add_subplot(211)
-    ax1.imshow(gold)
-    ax1.axis('off')
-
-    ax2 = fig.add_subplot(212)
-    ax2.imshow(pred)
-    ax2.axis('off')
-
-    plt.tight_layout()
-    plt.show()
+        pred = np.tile(pred, (N_ // 10, 1))
+        fig = plt.figure()
+        ax1 = fig.add_subplot(111)
+        ax1.imshow(pred)
+        ax1.axis('off')
+        plt.tight_layout()
+        plt.show()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     data.add_args(parser)
+    SemiMarkovModule.add_args(parser)
     parser.add_argument('--model', choices=['background', 'supervised', 'unsupervised'], default='unsupervised')
     parser.add_argument('--path', help='override model path', type=str, default='')
     args = parser.parse_args()

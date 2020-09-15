@@ -13,7 +13,7 @@ assert os.path.exists(NBC_ROOT), 'NBC_ROOT location doesn\'t exist'
 
 class ValidateFeatures(argparse.Action):
     def __call__(self, parser, args, values, option_string=None):
-        valid_args = ['obj_speeds', 'lhand_speed', 'rhand_speed']
+        valid_args = ['obj_speeds', 'lhand_speed', 'rhand_speed', 'apple_speed']
         for value in values:
             if value not in valid_args:
                 raise ValueError(value)
@@ -22,26 +22,33 @@ class ValidateFeatures(argparse.Action):
 def add_args(parser):
     parser.add_argument('--nbc_features', nargs='+', action=ValidateFeatures, default=['obj_speeds'])
     parser.add_argument('--nbc_subsample', type=int, default=90)
-    parser.add_argument('--nbc_mode', choices=['train', 'test'], default='train')
+    parser.add_argument('--nbc_mini', action='store_true')
 
 class NBCData:
-    def __init__(self, args):
+    def __init__(self, args, mode='train'):
         self.args = args
+        self.mode = mode
         self.load_spatial()
         self.load_features()
 
+    def to_dataset(self):
+        return torch.FloatTensor(self.features), torch.LongTensor(self.lengths)
+
     def load_spatial(self):
-        print('Loading spatial data')
         paths = glob.glob(NBC_ROOT + 'raw/*')
         assert len(paths) > 0
         spatial = []
-        for path in tqdm(paths):
+        for path in paths:
             session = path.replace('\\', '/').split('/')[-1]
-            if self.args.nbc_mode == 'train':
+            if self.mode == 'train':
+                if self.args.nbc_mini and not session[:4] == '1_1a':
+                    continue
                 if session[:4] in ['3_1b', '4_2b']:
                     continue
             else:
-                assert self.args.nbc_mode == 'test'
+                assert self.mode == 'test'
+                if self.args.nbc_mini and not session[:4] == '3_1b':
+                    continue
                 if session[:4] not in ['3_1b', '4_2b']:
                     continue
             subsample_path = os.path.join(path, 'spatial_subsample{}.json'.format(self.args.nbc_subsample))
@@ -54,6 +61,16 @@ class NBCData:
             spatial.append(df)
         self.spatial = pd.concat(spatial)
 
+        self.spatial['speed'] = self.spatial.apply(lambda row: np.linalg.norm([row['velX'], row['velY'], row['velZ']]), axis=1)
+        self.spatial.fillna(0, inplace=True)
+        self.spatial['speed'].clip(0., 3., inplace=True)
+
+        self.lengths_dict = {}
+        for session, group in self.spatial.groupby('session'):
+            self.lengths_dict[session] = len(group['step'].unique())
+        self.max_seq_len = max(self.lengths_dict.values())
+        self.lengths = np.array(list(self.lengths_dict.values()), dtype=int)
+
     def subsample(self, session):
         step = self.args.subsample
         spatial = pd.read_json(os.path.join(session, 'spatial.json'), orient='index')
@@ -64,41 +81,36 @@ class NBCData:
         return spatial
 
     def load_features(self):
+        features = []
         if 'obj_speeds' in self.args.nbc_features:
-            features, lengths = self.obj_speeds()
-            print(features.shape)
-            print(lengths)
-            print(lengths.shape)
+            for obj in sorted(self.spatial[(self.spatial['dynamic'] == True) & ~(self.spatial['name'].isin(['LeftHand', 'RightHand', 'Head']))]['name'].unique()):
+                feat = self.obj_speed(obj)
+                features.append(feat)
+        if 'lhand_speed' in self.args.nbc_features:
+            feat = self.obj_speed('LeftHand')
+            features.append(feat)
+        if 'rhand_speed' in self.args.nbc_features:
+            feat = self.obj_speed('RightHand')
+            features.append(feat)
+        if 'apple_speed' in self.args.nbc_features:
+            feat = self.obj_speed('Apple')
+            features.append(feat)
+        self.features = np.concatenate(features, axis=-1)
 
-    def obj_speeds(self):
-        df = self.spatial[(self.spatial['dynamic'] == True) & ~(self.spatial['name'].isin(['LeftHand', 'RightHand', 'Head']))]
-        df['speed'] = df.apply(lambda row: np.linalg.norm([row['velX'], row['velY'], row['velZ']]), axis=1)
-        names = {k: v for k, v in enumerate(sorted(df['name'].unique()))}
+    def obj_speed(self, obj):
         feat = []
-        k = 0
-        for session, group in df.groupby('session'):
-            seq = []
-            for step, rows in group.groupby('step'):
-                vec = np.zeros((len(names),), dtype=np.float32)
-                for idx, obj in names.items():
-                    obj_row = rows[rows['name'] == obj]
-                    if not len(obj_row) == 1:
-                        continue
-                    obj_row = obj_row.iloc[0]
-                    vec[idx] = obj_row['speed']
-                seq.append(vec)
-            if len(seq) > k:
-                k = len(seq)
-            seq = np.vstack(seq)
-            feat.append(seq)
-        padded = []
-        lengths = []
-        for vec in feat:
-            vec_ = np.zeros((k, len(names)), dtype=np.float32)
-            vec_[:vec.shape[0]] = vec
-            padded.append(vec_)
-            lengths.append(vec.shape[0])
-        return np.stack(padded, axis=0), np.array(lengths)
+        for session in self.lengths_dict.keys():
+            group = self.spatial[self.spatial['session'] == session]
+            seq = np.zeros((self.max_seq_len,))
+            for i, (step, rows) in enumerate(group.groupby('step')):
+                row = rows[rows['name'] == obj]
+                if not len(row) == 1:
+                    #print('Speed not found for {} at step {}'.format(obj, step))
+                    continue
+                row = row.iloc[0]
+                seq[i] = row['speed']
+            feat.append(seq[:, np.newaxis])
+        return np.stack(feat, axis=0)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

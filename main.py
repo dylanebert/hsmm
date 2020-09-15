@@ -16,24 +16,15 @@ torch.manual_seed(0)
 torch.cuda.manual_seed(0)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
-device = torch.device('cuda')
 
-def untrained_model(n_classes, max_k):
-    parser = argparse.ArgumentParser()
-    SemiMarkovModule.add_args(parser)
-    args = parser.parse_args(['--sm_max_span_length', str(max_k)])
-
+def untrained_model(args, n_classes):
     model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
     if device == torch.device('cuda'):
         model.cuda()
 
     return model
 
-def train_supervised(train_dset, n_classes, max_k):
-    parser = argparse.ArgumentParser()
-    SemiMarkovModule.add_args(parser)
-    args = parser.parse_args(['--sm_max_span_length', str(max_k)])
-
+def train_supervised(args, train_dset, n_classes):
     model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
     if device == torch.device('cuda'):
         model.cuda()
@@ -48,15 +39,14 @@ def train_supervised(train_dset, n_classes, max_k):
 
     return model
 
-def train_unsupervised(train_dset, test_dset, n_classes, max_k, epochs=999):
-    parser = argparse.ArgumentParser()
-    SemiMarkovModule.add_args(parser)
-    args = parser.parse_args(['--sm_max_span_length', str(max_k)])
-
+def train_unsupervised(args, train_dset, test_dset, n_classes):
     train_loader = DataLoader(train_dset, batch_size=10)
     test_loader = DataLoader(test_dset, batch_size=10)
 
-    model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
+    n_dim = train_dset[0]['features'].shape[-1]
+    assert n_dim == test_dset[0]['features'].shape[-1]
+
+    model = SemiMarkovModule(args, n_classes, n_dim, allow_self_transitions=True)
     if device == torch.device('cuda'):
         model.cuda()
     model.initialize_gaussian(train_dset.features, train_dset.lengths)
@@ -73,12 +63,15 @@ def train_unsupervised(train_dset, test_dset, n_classes, max_k, epochs=999):
 
     model.train()
     best_loss = 1e9
-    for epoch in range(epochs):
+    for epoch in range(args.epochs):
         losses = []
         for batch in train_loader:
             features = batch['features']
             lengths = batch['lengths']
-            valid_classes = batch['valid_classes']
+            if 'valid_classes' in batch:
+                valid_classes = batch['valid_classes']
+            else:
+                valid_classes = None
             N_ = lengths.max().item()
             features = features[:, :N_, :]
             loss, _ = model.log_likelihood(features, lengths, valid_classes)
@@ -87,10 +80,13 @@ def train_unsupervised(train_dset, test_dset, n_classes, max_k, epochs=999):
             losses.append(loss.item())
             optimizer.step()
             model.zero_grad()
-        train_remap_acc, train_action_remap_acc, train_pred = predict(model, train_loader, remap=True)
-        test_remap_acc, test_action_remap_acc, test_pred = predict(model, test_loader, remap=True)
-        print('epoch: {}, avg loss: {:.4f}, train acc: {:.2f}, test acc: {:.2f}, train step acc: {:.2f}, test step acc: {:.2f}'.format(
-            epoch, np.mean(losses), train_remap_acc, test_remap_acc, train_action_remap_acc, test_action_remap_acc))
+        if 'labels' in train_dset[0]:
+            train_remap_acc, train_action_remap_acc, train_pred = predict(model, train_loader, remap=True)
+            test_remap_acc, test_action_remap_acc, test_pred = predict(model, test_loader, remap=True)
+            print('epoch: {}, avg loss: {:.4f}, train acc: {:.2f}, test acc: {:.2f}, train step acc: {:.2f}, test step acc: {:.2f}'.format(
+                epoch, np.mean(losses), train_remap_acc, test_remap_acc, train_action_remap_acc, test_action_remap_acc))
+        else:
+            print('epoch: {}, avg_loss: {:.4f}'.format(epoch, np.mean(losses)))
         if np.mean(losses) < best_loss:
             best_loss = np.mean(losses) - 1e-7
         else:
@@ -160,20 +156,25 @@ def predict(model, dataloader, remap=True):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     data.add_args(parser)
+    SemiMarkovModule.add_args(parser)
     parser.add_argument('--model', choices=['untrained', 'supervised', 'unsupervised'], default='unsupervised')
+    parser.add_argument('--batch_size', type=int, default=10)
     parser.add_argument('--epochs', type=int, default=999)
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
+    device = torch.device(args.device)
+
     train_dset, test_dset = data.dataset_from_args(args)
-    n_classes = train_dset[0]['features'].size(1)
+    assert train_dset.n_classes == test_dset.n_classes
+    n_classes = train_dset.n_classes
 
     if args.model == 'untrained':
-        model = untrained_model(n_classes, args.max_k)
+        model = untrained_model(args, n_classes)
     elif args.model == 'supervised':
-        model = train_supervised(train_dset, n_classes, args.max_k)
+        model = train_supervised(args, train_dset, n_classes)
     elif args.model == 'unsupervised':
-        model = train_unsupervised(train_dset, test_dset, n_classes, args.max_k, epochs=args.epochs)
+        model = train_unsupervised(args, train_dset, test_dset, n_classes)
 
     if args.debug:
         print('Debug mode - not saving')
@@ -189,9 +190,10 @@ if __name__ == '__main__':
         print('Saving model to {}'.format(savepath))
         torch.save(model, savepath)
 
-    train_loader = DataLoader(train_dset, batch_size=10)
-    test_loader = DataLoader(test_dset, batch_size=10)
-    train_acc, train_action_acc, train_pred = predict(model, train_loader, remap=(args.model == 'unsupervised'))
-    test_acc, test_action_acc, test_pred = predict(model, test_loader, remap=(args.model == 'unsupervised'))
-    print('Train acc: {:.2f}; step: {:.2f}'.format(train_acc, train_action_acc))
-    print('Test acc: {:.2f}; step: {:.2f}'.format(test_acc, test_action_acc))
+    if 'labels' in train_dset[0]:
+        train_loader = DataLoader(train_dset, batch_size=args.batch_size)
+        test_loader = DataLoader(test_dset, batch_size=args.batch_size)
+        train_acc, train_action_acc, train_pred = predict(model, train_loader, remap=(args.model == 'unsupervised'))
+        test_acc, test_action_acc, test_pred = predict(model, test_loader, remap=(args.model == 'unsupervised'))
+        print('Train acc: {:.2f}; step: {:.2f}'.format(train_acc, train_action_acc))
+        print('Test acc: {:.2f}; step: {:.2f}'.format(test_acc, test_action_acc))

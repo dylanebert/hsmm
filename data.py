@@ -15,25 +15,41 @@ NBC_ROOT = os.environ['NBC_ROOT']
 def add_args(parser):
     nbc.add_args(parser)
     parser.add_argument('--dataset', choices=['toy', 'nbc', 'nbc_annotations', 'nbc_synthetic'], default='toy')
-    parser.add_argument('--max_k', help='max segment length', type=int, default=20)
     parser.add_argument('--device', choices=['cpu', 'cuda'], default='cuda')
     parser.add_argument('--n_train', help='number of train instances (for generated datasets)', type=int, default=100)
     parser.add_argument('--n_test', help='number of test instances (for generated datasets)', type=int, default=10)
+    parser.add_argument('--n_classes', help='number of classes (for unsupervised datasets like nbc)', type=int, default=5)
 
 def dataset_from_args(args):
     if args.dataset == 'toy':
-        train_dset = Dataset(*synthetic_data(args.n_train), max_k=args.max_k, device=torch.device(args.device))
-        test_dset = Dataset(*synthetic_data(args.n_test), max_k=args.max_k, device=torch.device(args.device))
+        train_dset = Dataset(*synthetic_data(args.n_train), max_k=args.sm_max_span_length, device=torch.device(args.device))
+        test_dset = Dataset(*synthetic_data(args.n_test), max_k=args.sm_max_span_length, device=torch.device(args.device))
     elif args.dataset == 'nbc':
-        raise NotImplementedError('nbc')
+        train_dset = UnsupervisedDataset(*nbc.NBCData(args, 'train').to_dataset(), n_classes=args.n_classes, device=torch.device(args.device))
+        test_dset = UnsupervisedDataset(*nbc.NBCData(args, 'test').to_dataset(), n_classes=args.n_classes, device=torch.device(args.device))
     elif args.dataset == 'nbc_annotations':
-        train_dset = Dataset(*nbc_annotations_dataset('train'), max_k=args.max_k, device=torch.device(args.device))
-        test_dset = Dataset(*nbc_annotations_dataset('test'), max_k=args.max_k, device=torch.device(args.device))
+        train_dset = Dataset(*nbc_annotations_dataset('train'), max_k=args.sm_max_span_length, device=torch.device(args.device))
+        test_dset = Dataset(*nbc_annotations_dataset('test'), max_k=args.sm_max_span_length, device=torch.device(args.device))
     else:
         assert args.dataset == 'nbc_synthetic'
-        train_dset = Dataset(*nbc_synthetic_dataset(args.n_train), max_k=args.max_k, device=torch.device(args.device))
-        test_dset = Dataset(*nbc_synthetic_dataset(args.n_test), max_k=args.max_k, device=torch.device(args.device))
+        train_dset = Dataset(*nbc_synthetic_dataset(args.n_train), max_k=args.sm_max_span_length, device=torch.device(args.device))
+        test_dset = Dataset(*nbc_synthetic_dataset(args.n_test), max_k=args.sm_max_span_length, device=torch.device(args.device))
     return train_dset, test_dset
+
+class UnsupervisedDataset(torch.utils.data.Dataset):
+    def __init__(self, features, lengths, n_classes, device=torch.device('cuda')):
+        self.features = features.to(device)
+        self.lengths = lengths.to(device)
+        self.n_classes = n_classes
+
+    def __len__(self):
+        return self.features.size(0)
+
+    def __getitem__(self, index):
+        return {
+            'features': self.features[index],
+            'lengths': self.lengths[index]
+        }
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, labels, features, lengths, valid_classes, max_k, device=torch.device('cuda')):
@@ -42,6 +58,7 @@ class Dataset(torch.utils.data.Dataset):
         self.lengths = lengths.to(device)
         self.valid_classes = [c.to(device) for c in valid_classes]
         self.max_k = max_k
+        self.n_classes = self.features.shape[-1]
 
     def __len__(self):
         return self.labels.size(0)
@@ -262,4 +279,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     train_dset, test_dset = dataset_from_args(args)
-    print(train_dset[0]['labels'])
+    print(train_dset[0]['features'])
+    print(train_dset[0]['features'].shape)
+    print(test_dset[0]['features'].shape)

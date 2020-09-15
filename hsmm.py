@@ -169,7 +169,7 @@ class SemiMarkovModule(torch.nn.Module):
         mean = feats.mean(dim=0, keepdim=True)
         self.gaussian_means.data.zero_()
         self.gaussian_means.data.add_(mean.expand((self.n_classes, self.feature_dim)))
-        self.gaussian_cov.data = torch.diag(feats.var(dim=0))
+        #self.gaussian_cov.data = torch.diag(feats.var(dim=0))
 
     def initialize_supervised(self, feature_list, label_list, overrides=['mean', 'cov', 'init', 'trans', 'lengths']):
         emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, covariance_type='tied_diag', n_classes=self.n_classes, max_k=self.max_k)
