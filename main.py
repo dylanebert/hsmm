@@ -18,14 +18,14 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 def untrained_model(args, n_classes):
-    model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
+    model = SemiMarkovModule(args, n_classes, n_classes, args.max_k, allow_self_transitions=True)
     if device == torch.device('cuda'):
         model.cuda()
 
     return model
 
 def train_supervised(args, train_dset, n_classes):
-    model = SemiMarkovModule(args, n_classes, n_classes, allow_self_transitions=True)
+    model = SemiMarkovModule(args, n_classes, n_classes, args.max_k, allow_self_transitions=True)
     if device == torch.device('cuda'):
         model.cuda()
 
@@ -46,7 +46,7 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
     n_dim = train_dset[0]['features'].shape[-1]
     assert n_dim == test_dset[0]['features'].shape[-1]
 
-    model = SemiMarkovModule(args, n_classes, n_dim, allow_self_transitions=True)
+    model = SemiMarkovModule(args, n_classes, n_dim, args.max_k, allow_self_transitions=True)
     if device == torch.device('cuda'):
         model.cuda()
     model.initialize_gaussian(train_dset.features, train_dset.lengths)
@@ -98,12 +98,15 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
 def predict(model, dataloader, remap=True):
     items = []
     token_match, remap_match, token_total = 0, 0, 0
-    action_match, action_remap_match = 0, 0
+    action_match, action_remap_match, action_total = 0, 0, 0
     for batch in dataloader:
         features = batch['features']
         lengths = batch['lengths']
         gold_spans = batch['spans']
-        valid_classes = batch['valid_classes']
+        if 'valid_classes' in batch:
+            valid_classes = batch['valid_classes']
+        else:
+            valid_classes = None
 
         batch_size = features.size(0)
         N_ = lengths.max().item()
@@ -144,10 +147,11 @@ def predict(model, dataloader, remap=True):
             action_match += (gold_labels_trim[i] == pred_labels_trim[i])[gold_labels_trim[i] != 0].sum().item()
             action_remap_match += (gold_labels_trim[i] == pred_labels_trim[i])[gold_labels_trim[i] != 0].sum().item()
             token_total += pred_labels_trim[i].size(0)
+            action_total += (gold_labels_trim[i] != 0).sum()
     accuracy = 100. * token_match / token_total
     remapped_accuracy = 100. * remap_match / token_total
-    action_accuracy = 100. * action_match / token_total
-    action_remapped_accuracy = 100. * action_remap_match / token_total
+    action_accuracy = 100. * action_match / action_total
+    action_remapped_accuracy = 100. * action_remap_match / action_total
     if remap:
         return remapped_accuracy, action_remapped_accuracy, items
     else:

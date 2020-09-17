@@ -14,26 +14,33 @@ NBC_ROOT = os.environ['NBC_ROOT']
 
 def add_args(parser):
     nbc.add_args(parser)
-    parser.add_argument('--dataset', choices=['toy', 'nbc', 'nbc_annotations', 'nbc_synthetic'], default='toy')
+    parser.add_argument('--dataset', choices=['toy', 'nbc', 'nbc_annotations', 'nbc_synthetic', 'unit_test'], default='toy')
     parser.add_argument('--device', choices=['cpu', 'cuda'], default='cuda')
     parser.add_argument('--n_train', help='number of train instances (for generated datasets)', type=int, default=100)
     parser.add_argument('--n_test', help='number of test instances (for generated datasets)', type=int, default=10)
     parser.add_argument('--n_classes', help='number of classes (for unsupervised datasets like nbc)', type=int, default=5)
+    parser.add_argument('--max_k', help='max state length', type=int, default=20)
+    parser.add_argument('--unit_test_dim', help='features dimensionality (for unit_test dataset)', type=int, default=2)
+    parser.add_argument('--unit_test_a', help='idle poisson expectation (for unit_test dataset)', type=int, default=2)
+    parser.add_argument('--unit_test_b', help='action poisson expectation (for unit_test dataset)', type=int, default=2)
 
 def dataset_from_args(args):
     if args.dataset == 'toy':
-        train_dset = Dataset(*synthetic_data(args.n_train), max_k=args.sm_max_span_length, device=torch.device(args.device))
-        test_dset = Dataset(*synthetic_data(args.n_test), max_k=args.sm_max_span_length, device=torch.device(args.device))
+        train_dset = Dataset(*synthetic_data(args.n_train), max_k=args.max_k, device=torch.device(args.device))
+        test_dset = Dataset(*synthetic_data(args.n_test), max_k=args.max_k, device=torch.device(args.device))
     elif args.dataset == 'nbc':
         train_dset = UnsupervisedDataset(*nbc.NBCData(args, 'train').to_dataset(), n_classes=args.n_classes, device=torch.device(args.device))
         test_dset = UnsupervisedDataset(*nbc.NBCData(args, 'test').to_dataset(), n_classes=args.n_classes, device=torch.device(args.device))
     elif args.dataset == 'nbc_annotations':
-        train_dset = Dataset(*nbc_annotations_dataset('train'), max_k=args.sm_max_span_length, device=torch.device(args.device))
-        test_dset = Dataset(*nbc_annotations_dataset('test'), max_k=args.sm_max_span_length, device=torch.device(args.device))
+        train_dset = Dataset(*nbc_annotations_dataset('train'), max_k=args.max_k, device=torch.device(args.device))
+        test_dset = Dataset(*nbc_annotations_dataset('test'), max_k=args.max_k, device=torch.device(args.device))
+    elif args.dataset == 'unit_test':
+        train_dset = Dataset(*unit_test_data(args.n_train, n_dim=args.unit_test_dim), n_classes=2, max_k=args.max_k, device=torch.device(args.device))
+        test_dset = Dataset(*unit_test_data(args.n_test, n_dim=args.unit_test_dim), n_classes=2, max_k=args.max_k, device=torch.device(args.device))
     else:
         assert args.dataset == 'nbc_synthetic'
-        train_dset = Dataset(*nbc_synthetic_dataset(args.n_train), max_k=args.sm_max_span_length, device=torch.device(args.device))
-        test_dset = Dataset(*nbc_synthetic_dataset(args.n_test), max_k=args.sm_max_span_length, device=torch.device(args.device))
+        train_dset = Dataset(*nbc_synthetic_dataset(args.n_train), max_k=args.max_k, device=torch.device(args.device))
+        test_dset = Dataset(*nbc_synthetic_dataset(args.n_test), max_k=args.max_k, device=torch.device(args.device))
     return train_dset, test_dset
 
 class UnsupervisedDataset(torch.utils.data.Dataset):
@@ -52,13 +59,17 @@ class UnsupervisedDataset(torch.utils.data.Dataset):
         }
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, labels, features, lengths, valid_classes, max_k, device=torch.device('cuda')):
+    def __init__(self, labels, features, lengths, valid_classes, max_k, n_classes=None, device=torch.device('cuda')):
         self.labels = labels.to(device)
         self.features = features.to(device)
         self.lengths = lengths.to(device)
-        self.valid_classes = [c.to(device) for c in valid_classes]
+        if valid_classes is not None:
+            valid_classes = [c.to(device) for c in valid_classes]
+        self.valid_classes = valid_classes
         self.max_k = max_k
-        self.n_classes = self.features.shape[-1]
+        if n_classes is None:
+            n_classes = features.size(2)
+        self.n_classes = n_classes
 
     def __len__(self):
         return self.labels.size(0)
@@ -81,7 +92,6 @@ class Dataset(torch.utils.data.Dataset):
                 'valid_classes': self.valid_classes[index],
                 'spans': spans
             }
-
 
 def make_features(labels, n_classes, shift_constant=1.0):
     batch_size_, N_ = labels.size()
@@ -120,6 +130,32 @@ def synthetic_data(num_points=200, n_classes=3, max_seq_len=20, K=5, classes_per
     lengths = torch.LongTensor(lengths)
     valid_classes = [torch.LongTensor(c) for c in valid_classes]
     return labels, features, lengths, valid_classes
+
+def unit_test_data(num_points=200, idle_expectation=2, action_expectation=2, max_seq_len=20, n_dim=2):
+    labels = []
+    features = []
+    lengths = []
+    for i in range(num_points):
+        if i == 0:
+            length = max_seq_len
+        else:
+            length = random.randint(max_seq_len // 2, max_seq_len)
+        lengths.append(length)
+        seq = []
+        while len(seq) < max_seq_len:
+            seq.extend([0] * np.random.poisson(idle_expectation))
+            seq.extend([1] * np.random.poisson(action_expectation))
+        seq = seq[:max_seq_len]
+        feat = np.zeros((max_seq_len, n_dim))
+        for j, label in enumerate(seq):
+            if label == 1:
+                feat[j, random.randint(0, n_dim - 1)] = 1
+        labels.append(seq)
+        features.append(feat)
+    labels = torch.LongTensor(labels)
+    features = torch.FloatTensor(np.stack(features, axis=0))
+    lengths = torch.LongTensor(lengths)
+    return labels, features, lengths, None
 
 def nbc_annotations_dataset(mode='train', subsample=45):
     paths = glob.glob(NBC_ROOT + 'tuning/*.txt')
