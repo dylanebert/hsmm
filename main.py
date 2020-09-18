@@ -10,6 +10,7 @@ from datetime import datetime
 import glob
 import data
 from data import labels_to_spans, spans_to_labels
+import pickle
 
 random.seed(a=0)
 torch.manual_seed(0)
@@ -18,14 +19,20 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 def untrained_model(args, n_classes):
-    model = SemiMarkovModule(args, n_classes, n_classes, args.max_k, allow_self_transitions=True)
+    n_dim = train_dset[0]['features'].shape[-1]
+    assert n_dim == test_dset[0]['features'].shape[-1]
+
+    model = SemiMarkovModule(args, n_classes, n_dim, args.max_k, allow_self_transitions=True)
     if device == torch.device('cuda'):
         model.cuda()
 
     return model
 
 def train_supervised(args, train_dset, n_classes):
-    model = SemiMarkovModule(args, n_classes, n_classes, args.max_k, allow_self_transitions=True)
+    n_dim = train_dset[0]['features'].shape[-1]
+    assert n_dim == test_dset[0]['features'].shape[-1]
+
+    model = SemiMarkovModule(args, n_classes, n_dim, args.max_k, allow_self_transitions=True)
     if device == torch.device('cuda'):
         model.cuda()
 
@@ -164,6 +171,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', choices=['untrained', 'supervised', 'unsupervised'], default='unsupervised')
     parser.add_argument('--batch_size', type=int, default=10)
     parser.add_argument('--epochs', type=int, default=999)
+    parser.add_argument('--suffix', type=str, default='')
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
@@ -183,16 +191,16 @@ if __name__ == '__main__':
     if args.debug:
         print('Debug mode - not saving')
     else:
-        modelpath = 'models/{}_{}'.format(args.dataset, args.model)
-        version = glob.glob(modelpath + '*')
-        if version == []:
-            savepath = modelpath + '0.pt'
-        else:
-            version_num = int(version[-1][len(modelpath):].replace('.pt', ''))
-            version_num += 1
-            savepath = '{}{}.pt'.format(modelpath, version_num)
-        print('Saving model to {}'.format(savepath))
-        torch.save(model, savepath)
+        modelpath = 'models/{}.pt'.format(datetime.now().strftime('%Y%m%d-%H%M%S'))
+        torch.save(model, modelpath)
+
+        metapath = 'models/{}_{}_{}.p'.format(args.dataset, args.model, args.suffix)
+        meta = {
+            'model': modelpath,
+            'args': args
+        }
+        with open(metapath, 'wb+') as f:
+            pickle.dump(meta, f)
 
     if 'labels' in train_dset[0]:
         train_loader = DataLoader(train_dset, batch_size=args.batch_size)

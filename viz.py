@@ -7,6 +7,7 @@ from hsmm import SemiMarkovModule, optimal_map
 import glob
 import argparse
 import data
+import pickle
 
 def viz_parameters(model):
     means = model.gaussian_means.detach().cpu().numpy()
@@ -67,7 +68,7 @@ def viz_state_seq(model, dataset, remap=True):
     if 'valid_classes' in dataset[0]:
         valid_classes = dataset[0]['valid_classes'].unsqueeze(0)
     else:
-        valid_classes = None
+        valid_classes = [torch.LongTensor(list(range(dataset.n_classes))).to(features.device)]
 
     batch_size = features.size(0)
     N_ = lengths.max().item()
@@ -118,20 +119,14 @@ def viz_state_seq(model, dataset, remap=True):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    data.add_args(parser)
-    SemiMarkovModule.add_args(parser)
-    parser.add_argument('--model', choices=['background', 'supervised', 'unsupervised'], default='unsupervised')
-    parser.add_argument('--path', help='override model path', type=str, default='')
-    args = parser.parse_args()
+    parser.add_argument('--path', help='model meta file name', type=str, required=True)
+    path = parser.parse_args().path.replace('.p', '')
 
+    with open('models/{}.p'.format(path), 'rb') as f:
+        meta = pickle.load(f)
+    args = meta['args']
     _, dataset = data.dataset_from_args(args)
-
-    if args.path == '':
-        model_fpaths = sorted(list(glob.glob('models/{}_{}*'.format(args.dataset, args.model))))
-        print('Loading model from path {}'.format(model_fpaths[-1]))
-        model = torch.load(model_fpaths[-1])
-    else:
-        model = torch.load('models/' + args.path)
+    model = torch.load(meta['model'])
 
     viz_state_seq(model, dataset, remap=(args.model == 'unsupervised'))
     viz_parameters(model)

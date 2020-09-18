@@ -18,7 +18,7 @@ def add_args(parser):
     parser.add_argument('--device', choices=['cpu', 'cuda'], default='cuda')
     parser.add_argument('--n_train', help='number of train instances (for generated datasets)', type=int, default=100)
     parser.add_argument('--n_test', help='number of test instances (for generated datasets)', type=int, default=10)
-    parser.add_argument('--n_classes', help='number of classes (for unsupervised datasets like nbc)', type=int, default=5)
+    parser.add_argument('--n_classes', help='number of classes (for fully unsupervised datasets)', type=int, default=5)
     parser.add_argument('--max_k', help='max state length', type=int, default=20)
     parser.add_argument('--unit_test_dim', help='features dimensionality (for unit_test dataset)', type=int, default=2)
     parser.add_argument('--unit_test_a', help='idle poisson expectation (for unit_test dataset)', type=int, default=2)
