@@ -21,8 +21,6 @@ def add_args(parser):
     parser.add_argument('--n_classes', help='number of classes (for fully unsupervised datasets)', type=int, default=5)
     parser.add_argument('--max_k', help='max state length', type=int, default=20)
     parser.add_argument('--unit_test_dim', help='features dimensionality (for unit_test dataset)', type=int, default=2)
-    parser.add_argument('--unit_test_a', help='idle poisson expectation (for unit_test dataset)', type=int, default=2)
-    parser.add_argument('--unit_test_b', help='action poisson expectation (for unit_test dataset)', type=int, default=2)
 
 def dataset_from_args(args):
     if args.dataset == 'toy':
@@ -131,7 +129,7 @@ def synthetic_data(num_points=200, n_classes=3, max_seq_len=20, K=5, classes_per
     valid_classes = [torch.LongTensor(c) for c in valid_classes]
     return labels, features, lengths, valid_classes
 
-def unit_test_data(num_points=200, idle_expectation=2, action_expectation=2, max_seq_len=20, n_dim=2):
+def unit_test_data(num_points=200, max_seq_len=20, n_dim=2):
     labels = []
     features = []
     lengths = []
@@ -143,8 +141,8 @@ def unit_test_data(num_points=200, idle_expectation=2, action_expectation=2, max
         lengths.append(length)
         seq = []
         while len(seq) < max_seq_len:
-            seq.extend([0] * np.random.poisson(idle_expectation))
-            seq.extend([1] * np.random.poisson(action_expectation))
+            seq.extend([0] * random.randint(1, 3))
+            seq.extend([1] * random.randint(1, 3))
         seq = seq[:max_seq_len]
         feat = np.zeros((max_seq_len, n_dim))
         for j, label in enumerate(seq):

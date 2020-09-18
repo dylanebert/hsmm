@@ -70,6 +70,11 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
 
     model.train()
     best_loss = 1e9
+    k = 0
+    patience = 5
+    best_model = type(model)(args, n_classes, n_dim, args.max_k, allow_self_transitions=True)
+    if device == torch.device('cuda'):
+        best_model.cuda()
     for epoch in range(args.epochs):
         losses = []
         for batch in train_loader:
@@ -96,11 +101,16 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
             print('epoch: {}, avg_loss: {:.4f}'.format(epoch, np.mean(losses)))
         if np.mean(losses) < best_loss:
             best_loss = np.mean(losses) - 1e-7
+            best_model.load_state_dict(model.state_dict())
+            k = 0
         else:
-            print('Loss didn\'t improve, stopping')
-            break
+            k += 1
+            print('Loss didn\'t improve for {} epoch(s)'.format(k))
+            if k == patience:
+                print('Stopping')
+                break
 
-    return model
+    return best_model
 
 def predict(model, dataloader, remap=True):
     items = []
