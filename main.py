@@ -22,7 +22,7 @@ def untrained_model(args, n_classes):
     n_dim = train_dset[0]['features'].shape[-1]
     assert n_dim == test_dset[0]['features'].shape[-1]
 
-    model = SemiMarkovModule(args, n_classes, n_dim, args.max_k, allow_self_transitions=True)
+    model = SemiMarkovModule(args, n_classes, n_dim, args.max_k)
     if device == torch.device('cuda'):
         model.cuda()
 
@@ -32,7 +32,7 @@ def train_supervised(args, train_dset, n_classes):
     n_dim = train_dset[0]['features'].shape[-1]
     assert n_dim == test_dset[0]['features'].shape[-1]
 
-    model = SemiMarkovModule(args, n_classes, n_dim, args.max_k, allow_self_transitions=True)
+    model = SemiMarkovModule(args, n_classes, n_dim, args.max_k)
     if device == torch.device('cuda'):
         model.cuda()
 
@@ -53,26 +53,28 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
     n_dim = train_dset[0]['features'].shape[-1]
     assert n_dim == test_dset[0]['features'].shape[-1]
 
-    model = SemiMarkovModule(args, n_classes, n_dim, args.max_k, allow_self_transitions=True)
+    model = SemiMarkovModule(args, n_classes, n_dim, args.max_k)
     if device == torch.device('cuda'):
         model.cuda()
     model.initialize_gaussian(train_dset.features, train_dset.lengths)
     optimizer = torch.optim.Adam(model.parameters(), model.learning_rate)
 
-    #supervised overrides for debugging
-    '''train_features = []
-    train_labels = []
-    for i in range(len(train_dset)):
-        sample = train_dset[i]
-        train_features.append(sample['features'])
-        train_labels.append(sample['labels'])
-    model.initialize_supervised(train_features, train_labels, overrides=['mean', 'cov'])'''
+    if args.overrides is not None:
+        for override in args.overrides:
+            assert override in ['mean', 'cov', 'init', 'trans', 'lengths'], override
+        train_features = []
+        train_labels = []
+        for i in range(len(train_dset)):
+            sample = train_dset[i]
+            train_features.append(sample['features'])
+            train_labels.append(sample['labels'])
+        model.initialize_supervised(train_features, train_labels, overrides=args.overrides)
 
     model.train()
     best_loss = 1e9
     k = 0
     patience = 5
-    best_model = type(model)(args, n_classes, n_dim, args.max_k, allow_self_transitions=True)
+    best_model = type(model)(args, n_classes, n_dim, args.max_k)
     if device == torch.device('cuda'):
         best_model.cuda()
     for epoch in range(args.epochs):
@@ -100,7 +102,7 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
         else:
             print('epoch: {}, avg_loss: {:.4f}'.format(epoch, np.mean(losses)))
         if np.mean(losses) < best_loss:
-            best_loss = np.mean(losses) - 1e-7
+            best_loss = np.mean(losses) - 1e-4
             best_model.load_state_dict(model.state_dict())
             k = 0
         else:
@@ -162,7 +164,7 @@ def predict(model, dataloader, remap=True):
             token_match += (gold_labels_trim[i] == pred_labels_trim[i]).sum().item()
             remap_match += (gold_labels_trim[i] == pred_remapped).sum().item()
             action_match += (gold_labels_trim[i] == pred_labels_trim[i])[gold_labels_trim[i] != 0].sum().item()
-            action_remap_match += (gold_labels_trim[i] == pred_labels_trim[i])[gold_labels_trim[i] != 0].sum().item()
+            action_remap_match += (gold_labels_trim[i] == pred_remapped)[gold_labels_trim[i] != 0].sum().item()
             token_total += pred_labels_trim[i].size(0)
             action_total += (gold_labels_trim[i] != 0).sum()
     accuracy = 100. * token_match / token_total
@@ -179,6 +181,7 @@ if __name__ == '__main__':
     data.add_args(parser)
     SemiMarkovModule.add_args(parser)
     parser.add_argument('--model', choices=['untrained', 'supervised', 'unsupervised'], default='unsupervised')
+    parser.add_argument('--overrides', nargs='+')
     parser.add_argument('--batch_size', type=int, default=10)
     parser.add_argument('--epochs', type=int, default=999)
     parser.add_argument('--suffix', type=str, default='')

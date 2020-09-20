@@ -113,19 +113,20 @@ class SemiMarkovModule(torch.nn.Module):
     @classmethod
     def add_args(cls, parser):
         NICE.add_args(parser)
+        parser.add_argument('--block_self_transitions', action='store_true')
         parser.add_argument('--sm_supervised_state_smoothing', type=float, default=1e-2)
         parser.add_argument('--sm_supervised_length_smoothing', type=float, default=1e-1)
         parser.add_argument('--sm_feature_projection', action='store_true')
         parser.add_argument('--sm_init_non_projection_parameters_from')
         parser.add_argument('--lr', type=float, default=1e-1)
 
-    def __init__(self, args, n_classes, n_dims, max_k, allow_self_transitions=True):
+    def __init__(self, args, n_classes, n_dims, max_k):
         super(SemiMarkovModule, self).__init__()
         self.args = args
         self.n_classes = n_classes
         self.input_feature_dim = n_dims
         self.feature_dim = n_dims
-        self.allow_self_transitions = allow_self_transitions
+        self.allow_self_transitions = not args.block_self_transitions
         self.max_k = max_k
         self.learning_rate = args.lr
         self.init_params()

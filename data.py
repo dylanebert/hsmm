@@ -129,7 +129,7 @@ def synthetic_data(num_points=200, n_classes=3, max_seq_len=20, K=5, classes_per
     valid_classes = [torch.LongTensor(c) for c in valid_classes]
     return labels, features, lengths, valid_classes
 
-def unit_test_data(num_points=200, max_seq_len=20, n_dim=2):
+def unit_test_data(num_points=200, max_seq_len=20, n_dim=2, K=5):
     labels = []
     features = []
     lengths = []
@@ -137,12 +137,12 @@ def unit_test_data(num_points=200, max_seq_len=20, n_dim=2):
         if i == 0:
             length = max_seq_len
         else:
-            length = random.randint(max_seq_len // 2, max_seq_len)
+            length = random.randint(K, max_seq_len)
         lengths.append(length)
         seq = []
         while len(seq) < max_seq_len:
-            seq.extend([0] * random.randint(1, 3))
-            seq.extend([1] * random.randint(1, 3))
+            seq.extend([0] * random.randint(1, 1))
+            seq.extend([1] * random.randint(5, 5))
         seq = seq[:max_seq_len]
         feat = np.zeros((max_seq_len, n_dim))
         for j, label in enumerate(seq):
