@@ -20,7 +20,7 @@ def add_args(parser):
     parser.add_argument('--n_test', help='number of test instances (for generated datasets)', type=int, default=10)
     parser.add_argument('--n_classes', help='number of classes (for fully unsupervised datasets)', type=int, default=5)
     parser.add_argument('--max_k', help='max state length', type=int, default=20)
-    parser.add_argument('--unit_test_dim', help='features dimensionality (for unit_test dataset)', type=int, default=2)
+    parser.add_argument('--unit_test_dim', help='features dimensionality (for unit_test dataset)', type=int, default=1)
 
 def dataset_from_args(args):
     if args.dataset == 'toy':
@@ -129,22 +129,18 @@ def synthetic_data(num_points=200, n_classes=3, max_seq_len=20, K=5, classes_per
     valid_classes = [torch.LongTensor(c) for c in valid_classes]
     return labels, features, lengths, valid_classes
 
-def unit_test_data(num_points=200, max_seq_len=20, n_dim=2, K=5):
+def unit_test_data(num_points=200, seq_len=20, n_dim=2):
     labels = []
     features = []
     lengths = []
     for i in range(num_points):
-        if i == 0:
-            length = max_seq_len
-        else:
-            length = random.randint(K, max_seq_len)
-        lengths.append(length)
+        lengths.append(seq_len)
         seq = []
-        while len(seq) < max_seq_len:
+        while len(seq) < seq_len:
             seq.extend([0] * random.randint(1, 1))
             seq.extend([1] * random.randint(5, 5))
-        seq = seq[:max_seq_len]
-        feat = np.zeros((max_seq_len, n_dim))
+        seq = seq[:seq_len]
+        feat = np.zeros((seq_len, n_dim))
         for j, label in enumerate(seq):
             if label == 1:
                 feat[j, random.randint(0, n_dim - 1)] = 1

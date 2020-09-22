@@ -77,6 +77,8 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
     best_model = type(model)(args, n_classes, n_dim, args.max_k)
     if device == torch.device('cuda'):
         best_model.cuda()
+    if args.debug:
+        deep_debug(model, test_dset, 0)
     for epoch in range(args.epochs):
         losses = []
         for batch in train_loader:
@@ -99,6 +101,9 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
             test_remap_acc, test_action_remap_acc, test_pred = predict(model, test_loader, remap=True)
             print('epoch: {}, avg loss: {:.4f}, train acc: {:.2f}, test acc: {:.2f}, train step acc: {:.2f}, test step acc: {:.2f}'.format(
                 epoch, np.mean(losses), train_remap_acc, test_remap_acc, train_action_remap_acc, test_action_remap_acc))
+
+            if args.debug:
+                deep_debug(model, test_dset, epoch+1)
         else:
             print('epoch: {}, avg_loss: {:.4f}'.format(epoch, np.mean(losses)))
         if np.mean(losses) < best_loss:
@@ -175,6 +180,23 @@ def predict(model, dataloader, remap=True):
         return remapped_accuracy, action_remapped_accuracy, items
     else:
         return accuracy, action_accuracy, items
+
+def deep_debug(model, test_dset, epoch):
+    features = test_dset[0]['features'].unsqueeze(0)
+    lengths = test_dset[0]['lengths'].unsqueeze(0)
+    valid_classes = None
+
+    transition_log_probs = model.transition_log_probs(valid_classes)
+    emission_log_probs = model.emission_log_probs(features, valid_classes)
+    initial_log_probs = model.initial_log_probs(valid_classes)
+    length_log_probs = model.length_log_probs(valid_classes)
+
+    print('Epoch {0}\n---------------------'.format(epoch))
+    print('Transition\n', transition_log_probs, '\n')
+    print('Emission\n', emission_log_probs, '\n')
+    print('Initial\n', initial_log_probs, '\n')
+    print('Lengths\n', length_log_probs, '\n')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

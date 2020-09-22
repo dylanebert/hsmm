@@ -70,7 +70,6 @@ def viz_state_seq(model, dataset, remap=True):
     else:
         valid_classes = [torch.LongTensor(list(range(dataset.n_classes))).to(features.device)]
 
-    batch_size = features.size(0)
     N_ = lengths.max().item()
     features = features[:, :N_, :]
 
