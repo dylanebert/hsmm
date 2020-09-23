@@ -21,6 +21,11 @@ def add_args(parser):
     parser.add_argument('--n_classes', help='number of classes (for fully unsupervised datasets)', type=int, default=5)
     parser.add_argument('--max_k', help='max state length', type=int, default=20)
     parser.add_argument('--unit_test_dim', help='features dimensionality (for unit_test dataset)', type=int, default=1)
+    parser.add_argument('--unit_test_seq_len', type=int, default=20)
+    parser.add_argument('--unit_test_idle_min', type=int, default=5)
+    parser.add_argument('--unit_test_action_min', type=int, default=1)
+    parser.add_argument('--unit_test_idle_max', type=int, default=5)
+    parser.add_argument('--unit_test_action_max', type=int, default=1)
 
 def dataset_from_args(args):
     if args.dataset == 'toy':
@@ -33,8 +38,8 @@ def dataset_from_args(args):
         train_dset = Dataset(*nbc_annotations_dataset('train'), max_k=args.max_k, device=torch.device(args.device))
         test_dset = Dataset(*nbc_annotations_dataset('test'), max_k=args.max_k, device=torch.device(args.device))
     elif args.dataset == 'unit_test':
-        train_dset = Dataset(*unit_test_data(args.n_train, n_dim=args.unit_test_dim), n_classes=2, max_k=args.max_k, device=torch.device(args.device))
-        test_dset = Dataset(*unit_test_data(args.n_test, n_dim=args.unit_test_dim), n_classes=2, max_k=args.max_k, device=torch.device(args.device))
+        train_dset = Dataset(*unit_test_data(args, args.n_train), n_classes=2, max_k=args.max_k, device=torch.device(args.device))
+        test_dset = Dataset(*unit_test_data(args, args.n_test), n_classes=2, max_k=args.max_k, device=torch.device(args.device))
     else:
         assert args.dataset == 'nbc_synthetic'
         train_dset = Dataset(*nbc_synthetic_dataset(args.n_train), max_k=args.max_k, device=torch.device(args.device))
@@ -129,7 +134,8 @@ def synthetic_data(num_points=200, n_classes=3, max_seq_len=20, K=5, classes_per
     valid_classes = [torch.LongTensor(c) for c in valid_classes]
     return labels, features, lengths, valid_classes
 
-def unit_test_data(num_points=200, seq_len=20, n_dim=2):
+def unit_test_data(args, num_points=200):
+    seq_len = args.unit_test_seq_len
     labels = []
     features = []
     lengths = []
@@ -137,13 +143,13 @@ def unit_test_data(num_points=200, seq_len=20, n_dim=2):
         lengths.append(seq_len)
         seq = []
         while len(seq) < seq_len:
-            seq.extend([0] * 4)#random.randint(5, 5))
-            seq.extend([1] * 1)#random.randint(1, 1))
+            seq.extend([0] * random.randint(args.unit_test_idle_min, args.unit_test_idle_max))
+            seq.extend([1] * random.randint(args.unit_test_action_min, args.unit_test_action_max))
         seq = seq[:seq_len]
-        feat = np.zeros((seq_len, n_dim))
+        feat = np.zeros((seq_len, args.unit_test_dim))
         for j, label in enumerate(seq):
             if label == 1:
-                feat[j, random.randint(0, n_dim - 1)] = 1
+                feat[j, random.randint(0, args.unit_test_dim - 1)] = 1
         labels.append(seq)
         features.append(feat)
     labels = torch.LongTensor(labels)

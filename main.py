@@ -62,16 +62,17 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
     model.initialize_gaussian(train_dset.features, train_dset.lengths)
     optimizer = torch.optim.Adam(model.parameters(), model.learning_rate)
 
-    if args.override is not None:
-        for override in args.override:
-            assert override in ['mean', 'cov', 'init', 'trans', 'lengths'], override
+    if args.override is not None or args.initialize is not None:
         train_features = []
         train_labels = []
         for i in range(len(train_dset)):
             sample = train_dset[i]
             train_features.append(sample['features'])
             train_labels.append(sample['labels'])
-        model.initialize_supervised(train_features, train_labels, overrides=args.override, freeze=(not args.unfreeze_overrides))
+        if args.initialize is not None:
+            model.initialize_supervised(train_features, train_labels, overrides=args.initialize, freeze=False)
+        if args.override is not None:
+            model.initialize_supervised(train_features, train_labels, overrides=args.override, freeze=True)
 
     def report_acc(epoch):
         train_remap_acc, train_action_remap_acc, train_pred = predict(model, train_loader, remap=True)
@@ -108,12 +109,13 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
             model.zero_grad()
         if 'labels' in train_dset[0]:
             report_acc(epoch)
+            print('Loss: {:.4f}'.format(np.mean(losses)))
             if args.debug:
                 deep_debug(args, model, test_dset, epoch+1)
         else:
             print('epoch: {}, avg_loss: {:.4f}'.format(epoch, np.mean(losses)))
         if np.mean(losses) < best_loss:
-            best_loss = np.mean(losses) - 1e-4
+            best_loss = np.mean(losses) - 1e-3
             best_model.load_state_dict(model.state_dict())
             k = 0
         else:
@@ -194,11 +196,11 @@ def deep_debug(args, model, test_dset, epoch):
 
     params = {
         'features': features.detach().cpu().numpy(),
-        'transition': np.exp(model.transition_log_probs(valid_classes).detach().cpu().numpy()),
+        'trans': np.exp(model.transition_log_probs(valid_classes).detach().cpu().numpy()),
         'emission': np.exp(model.emission_log_probs(features, valid_classes).detach().cpu().numpy()),
         'initial': np.exp(model.initial_log_probs(valid_classes).detach().cpu().numpy()),
-        'length': np.exp(model.poisson_log_rates.detach().cpu().numpy()),
-        'means': model.gaussian_means.detach().cpu().numpy()
+        'lengths': np.exp(model.poisson_log_rates.detach().cpu().numpy()),
+        'mean': model.gaussian_means.detach().cpu().numpy()
     }
 
     if args.debug_params is not None:
@@ -207,10 +209,12 @@ def deep_debug(args, model, test_dset, epoch):
             print('{}\n{}\n'.format(param, params[param]))
 
     if args.dataset == 'unit_test' and args.unit_test_dim == 1:
-        with open('debug/tmp.txt', 'a+') as f:
+        if epoch == 0:
+            open('debug/{}.txt'.format(args.suffix), 'w').close()
+        with open('debug/{}.txt'.format(args.suffix), 'a+') as f:
             if epoch == 0:
                 f.write('\t'.join(['mean1', 'mean2', '1>1', '2>1', '1>2', '2>2', 'len1', 'len2']) + '\n')
-            data = np.concatenate((params['means'].flatten(), params['transition'].flatten(), params['length']))
+            data = np.concatenate((params['mean'].flatten(), params['trans'].flatten(), params['lengths']))
             f.write('\t'.join([str(s) for s in data]) + '\n')
 
 if __name__ == '__main__':
@@ -219,12 +223,13 @@ if __name__ == '__main__':
     SemiMarkovModule.add_args(parser)
     parser.add_argument('--model', choices=['untrained', 'supervised', 'unsupervised'], default='unsupervised')
     parser.add_argument('--override', nargs='+', choices=['mean', 'cov', 'init', 'trans', 'lengths'])
-    parser.add_argument('--unfreeze_overrides', action='store_true')
+    parser.add_argument('--initialize', nargs='+', choices=['mean', 'cov', 'init', 'trans', 'lengths'])
     parser.add_argument('--batch_size', type=int, default=10)
     parser.add_argument('--epochs', type=int, default=999)
-    parser.add_argument('--suffix', type=str, default='')
+    parser.add_argument('--suffix', type=str, default='tmp')
     parser.add_argument('--debug', action='store_true')
-    parser.add_argument('--debug_params', nargs='+', choices=['features', 'transition', 'emission', 'initial', 'length', 'means'])
+    parser.add_argument('--debug_params', nargs='+', choices=['features', 'trans', 'emission', 'initial', 'lengths', 'mean'], default=['mean', 'lengths', 'trans'])
+    parser.add_argument('--nosave', action='store_true')
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -240,12 +245,10 @@ if __name__ == '__main__':
     elif args.model == 'unsupervised':
         model = train_unsupervised(args, train_dset, test_dset, n_classes)
 
-    if args.debug:
-        print('Debug mode - not saving')
-    else:
-        modelpath = 'models/{}.pt'.format(datetime.now().strftime('%Y%m%d-%H%M%S'))
-        torch.save(model, modelpath)
+    modelpath = 'models/{}.pt'.format(datetime.now().strftime('%Y%m%d-%H%M%S'))
+    torch.save(model, modelpath)
 
+    if not args.nosave:
         metapath = 'models/{}_{}_{}.p'.format(args.dataset, args.model, args.suffix)
         meta = {
             'model': modelpath,
