@@ -28,7 +28,7 @@ def untrained_model(args, n_classes):
 
     return model
 
-def train_supervised(args, train_dset, n_classes):
+def train_supervised(args, train_dset, test_dset, n_classes):
     n_dim = train_dset[0]['features'].shape[-1]
     assert n_dim == test_dset[0]['features'].shape[-1]
 
@@ -43,6 +43,9 @@ def train_supervised(args, train_dset, n_classes):
         train_features.append(sample['features'])
         train_labels.append(sample['labels'])
     model.fit_supervised(train_features, train_labels)
+
+    if args.debug:
+        deep_debug(args, model, test_dset, 0)
 
     return model
 
@@ -59,8 +62,8 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
     model.initialize_gaussian(train_dset.features, train_dset.lengths)
     optimizer = torch.optim.Adam(model.parameters(), model.learning_rate)
 
-    if args.overrides is not None:
-        for override in args.overrides:
+    if args.override is not None:
+        for override in args.override:
             assert override in ['mean', 'cov', 'init', 'trans', 'lengths'], override
         train_features = []
         train_labels = []
@@ -68,7 +71,14 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
             sample = train_dset[i]
             train_features.append(sample['features'])
             train_labels.append(sample['labels'])
-        model.initialize_supervised(train_features, train_labels, overrides=args.overrides)
+        model.initialize_supervised(train_features, train_labels, overrides=args.override, freeze=(not args.unfreeze_overrides))
+
+    def report_acc(epoch):
+        train_remap_acc, train_action_remap_acc, train_pred = predict(model, train_loader, remap=True)
+        test_remap_acc, test_action_remap_acc, test_pred = predict(model, test_loader, remap=True)
+        print('epoch: {}, train acc: {:.2f}, test acc: {:.2f}, train step acc: {:.2f}, test step acc: {:.2f}'.format(
+            epoch, train_remap_acc, test_remap_acc, train_action_remap_acc, test_action_remap_acc))
+    report_acc(-1)
 
     model.train()
     best_loss = 1e9
@@ -78,7 +88,7 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
     if device == torch.device('cuda'):
         best_model.cuda()
     if args.debug:
-        deep_debug(model, test_dset, 0)
+        deep_debug(args, model, test_dset, 0)
     for epoch in range(args.epochs):
         losses = []
         for batch in train_loader:
@@ -97,13 +107,9 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
             optimizer.step()
             model.zero_grad()
         if 'labels' in train_dset[0]:
-            train_remap_acc, train_action_remap_acc, train_pred = predict(model, train_loader, remap=True)
-            test_remap_acc, test_action_remap_acc, test_pred = predict(model, test_loader, remap=True)
-            print('epoch: {}, avg loss: {:.4f}, train acc: {:.2f}, test acc: {:.2f}, train step acc: {:.2f}, test step acc: {:.2f}'.format(
-                epoch, np.mean(losses), train_remap_acc, test_remap_acc, train_action_remap_acc, test_action_remap_acc))
-
+            report_acc(epoch)
             if args.debug:
-                deep_debug(model, test_dset, epoch+1)
+                deep_debug(args, model, test_dset, epoch+1)
         else:
             print('epoch: {}, avg_loss: {:.4f}'.format(epoch, np.mean(losses)))
         if np.mean(losses) < best_loss:
@@ -181,33 +187,44 @@ def predict(model, dataloader, remap=True):
     else:
         return accuracy, action_accuracy, items
 
-def deep_debug(model, test_dset, epoch):
+def deep_debug(args, model, test_dset, epoch):
     features = test_dset[0]['features'].unsqueeze(0)
     lengths = test_dset[0]['lengths'].unsqueeze(0)
     valid_classes = None
 
-    transition_log_probs = model.transition_log_probs(valid_classes)
-    emission_log_probs = model.emission_log_probs(features, valid_classes)
-    initial_log_probs = model.initial_log_probs(valid_classes)
-    length_log_probs = model.length_log_probs(valid_classes)
+    params = {
+        'features': features.detach().cpu().numpy(),
+        'transition': np.exp(model.transition_log_probs(valid_classes).detach().cpu().numpy()),
+        'emission': np.exp(model.emission_log_probs(features, valid_classes).detach().cpu().numpy()),
+        'initial': np.exp(model.initial_log_probs(valid_classes).detach().cpu().numpy()),
+        'length': np.exp(model.poisson_log_rates.detach().cpu().numpy()),
+        'means': model.gaussian_means.detach().cpu().numpy()
+    }
 
-    print('Epoch {0}\n---------------------'.format(epoch))
-    print('Transition\n', transition_log_probs, '\n')
-    print('Emission\n', emission_log_probs, '\n')
-    print('Initial\n', initial_log_probs, '\n')
-    print('Lengths\n', length_log_probs, '\n')
+    if args.debug_params is not None:
+        np.set_printoptions(suppress=True)
+        for param in args.debug_params:
+            print('{}\n{}\n'.format(param, params[param]))
 
+    if args.dataset == 'unit_test' and args.unit_test_dim == 1:
+        with open('debug/tmp.txt', 'a+') as f:
+            if epoch == 0:
+                f.write('\t'.join(['mean1', 'mean2', '1>1', '2>1', '1>2', '2>2', 'len1', 'len2']) + '\n')
+            data = np.concatenate((params['means'].flatten(), params['transition'].flatten(), params['length']))
+            f.write('\t'.join([str(s) for s in data]) + '\n')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     data.add_args(parser)
     SemiMarkovModule.add_args(parser)
     parser.add_argument('--model', choices=['untrained', 'supervised', 'unsupervised'], default='unsupervised')
-    parser.add_argument('--overrides', nargs='+')
+    parser.add_argument('--override', nargs='+', choices=['mean', 'cov', 'init', 'trans', 'lengths'])
+    parser.add_argument('--unfreeze_overrides', action='store_true')
     parser.add_argument('--batch_size', type=int, default=10)
     parser.add_argument('--epochs', type=int, default=999)
     parser.add_argument('--suffix', type=str, default='')
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--debug_params', nargs='+', choices=['features', 'transition', 'emission', 'initial', 'length', 'means'])
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -219,7 +236,7 @@ if __name__ == '__main__':
     if args.model == 'untrained':
         model = untrained_model(args, n_classes)
     elif args.model == 'supervised':
-        model = train_supervised(args, train_dset, n_classes)
+        model = train_supervised(args, train_dset, test_dset, n_classes)
     elif args.model == 'unsupervised':
         model = train_unsupervised(args, train_dset, test_dset, n_classes)
 

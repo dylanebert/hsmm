@@ -137,8 +137,8 @@ def unit_test_data(num_points=200, seq_len=20, n_dim=2):
         lengths.append(seq_len)
         seq = []
         while len(seq) < seq_len:
-            seq.extend([0] * random.randint(1, 1))
-            seq.extend([1] * random.randint(5, 5))
+            seq.extend([0] * 4)#random.randint(5, 5))
+            seq.extend([1] * 1)#random.randint(1, 1))
         seq = seq[:seq_len]
         feat = np.zeros((seq_len, n_dim))
         for j, label in enumerate(seq):

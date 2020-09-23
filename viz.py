@@ -8,6 +8,7 @@ import glob
 import argparse
 import data
 import pickle
+import pandas as pd
 
 def viz_parameters(model):
     means = model.gaussian_means.detach().cpu().numpy()
@@ -119,9 +120,9 @@ def viz_state_seq(model, dataset, remap=True):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--path', help='model meta file name', type=str, required=True)
-    path = parser.parse_args().path.replace('.p', '')
+    args = parser.parse_args()
 
-    with open('models/{}.p'.format(path), 'rb') as f:
+    with open('models/{}.p'.format(args.path), 'rb') as f:
         meta = pickle.load(f)
     args = meta['args']
     _, dataset = data.dataset_from_args(args)
