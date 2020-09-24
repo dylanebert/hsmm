@@ -208,14 +208,13 @@ def deep_debug(args, model, test_dset, epoch):
         for param in args.debug_params:
             print('{}\n{}\n'.format(param, params[param]))
 
-    if args.dataset == 'unit_test' and args.unit_test_dim == 1:
+    if epoch == 0:
+        open('debug/{}.txt'.format(args.suffix), 'w').close()
+    with open('debug/{}.txt'.format(args.suffix), 'a+') as f:
         if epoch == 0:
-            open('debug/{}.txt'.format(args.suffix), 'w').close()
-        with open('debug/{}.txt'.format(args.suffix), 'a+') as f:
-            if epoch == 0:
-                f.write('\t'.join(['mean1', 'mean2', '1>1', '2>1', '1>2', '2>2', 'len1', 'len2']) + '\n')
-            data = np.concatenate((params['mean'].flatten(), params['trans'].flatten(), params['lengths']))
-            f.write('\t'.join([str(s) for s in data]) + '\n')
+            f.write('\t'.join(['mean1', 'mean2', '1>1', '2>1', '1>2', '2>2', 'len1', 'len2']) + '\n')
+        data = np.concatenate((params['mean'].flatten(), params['trans'].flatten(), params['lengths']))
+        f.write('\t'.join([str(s) for s in data]) + '\n')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -234,7 +233,8 @@ if __name__ == '__main__':
 
     device = torch.device(args.device)
 
-    train_dset, test_dset = data.dataset_from_args(args)
+    train_dset = data.dataset_from_args(args, 'train')
+    test_dset = data.dataset_from_args(args, 'test')
     assert train_dset.n_classes == test_dset.n_classes
     n_classes = train_dset.n_classes
 
