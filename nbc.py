@@ -11,16 +11,9 @@ assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT envvar'
 NBC_ROOT = os.environ['NBC_ROOT']
 assert os.path.exists(NBC_ROOT), 'NBC_ROOT location doesn\'t exist'
 
-class ValidateFeatures(argparse.Action):
-    def __call__(self, parser, args, values, option_string=None):
-        valid_args = ['obj_speeds', 'lhand_speed', 'rhand_speed', 'apple_speed']
-        for value in values:
-            if value not in valid_args:
-                raise ValueError(value)
-        setattr(args, self.dest, values)
-
 def add_args(parser):
-    parser.add_argument('--nbc_features', nargs='+', action=ValidateFeatures, default=['obj_speeds'])
+    parser.add_argument('--nbc_features', nargs='+', choices=['obj_speeds', 'lhand_speed', 'rhand_speed', 'apple_speed'], default=['obj_speeds'])
+    parser.add_argument('--nbc_labels', choices=['moving'], default=['moving'])
     parser.add_argument('--nbc_subsample', type=int, default=90)
     parser.add_argument('--nbc_mini', action='store_true')
 
@@ -29,10 +22,18 @@ class NBCData:
         self.args = args
         self.mode = mode
         self.load_spatial()
-        self.load_features()
+        self.generate_features()
+        self.generate_labels()
 
     def to_dataset(self):
-        return torch.FloatTensor(self.features), torch.LongTensor(self.lengths)
+        if self.labels is None:
+            labels = None
+        else:
+            labels = torch.LongTensor(self.labels)
+        features = torch.FloatTensor(self.features)
+        lengths = torch.LongTensor(self.lengths)
+        valid_classes = None
+        return labels, features, lengths, valid_classes
 
     def load_spatial(self):
         paths = glob.glob(NBC_ROOT + 'raw/*')
@@ -80,7 +81,7 @@ class NBCData:
         spatial.to_json(os.path.join(session, 'spatial_subsample{}.json'.format(step)), orient='index')
         return spatial
 
-    def load_features(self):
+    def generate_features(self):
         features = []
         if 'obj_speeds' in self.args.nbc_features:
             for obj in sorted(self.spatial[(self.spatial['dynamic'] == True) & ~(self.spatial['name'].isin(['LeftHand', 'RightHand', 'Head']))]['name'].unique()):
@@ -96,6 +97,12 @@ class NBCData:
             feat = self.obj_speed('Apple')
             features.append(feat)
         self.features = np.concatenate(features, axis=-1)
+
+    def generate_labels(self):
+        if self.args.nbc_labels == 'moving':
+            self.labels = np.any(self.features > 0, axis=-1).astype(int)
+        else:
+            assert self.args.nbc_labels == 'none'
 
     def obj_speed(self, obj):
         feat = []

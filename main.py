@@ -55,6 +55,7 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
 
     n_dim = train_dset[0]['features'].shape[-1]
     assert n_dim == test_dset[0]['features'].shape[-1]
+    has_labels = train_dset[0]['labels'] is not None
 
     model = SemiMarkovModule(args, n_classes, n_dim, args.max_k)
     if device == torch.device('cuda'):
@@ -79,7 +80,8 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
         test_remap_acc, test_action_remap_acc, test_pred = predict(model, test_loader, remap=True)
         print('epoch: {}, train acc: {:.2f}, test acc: {:.2f}, train step acc: {:.2f}, test step acc: {:.2f}'.format(
             epoch, train_remap_acc, test_remap_acc, train_action_remap_acc, test_action_remap_acc))
-    report_acc(-1)
+    if has_labels:
+        report_acc(-1)
 
     model.train()
     best_loss = 1e9
@@ -107,13 +109,11 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
             losses.append(loss.item())
             optimizer.step()
             model.zero_grad()
-        if 'labels' in train_dset[0]:
+        if has_labels:
             report_acc(epoch)
-            print('Loss: {:.4f}'.format(np.mean(losses)))
-            if args.debug:
-                deep_debug(args, model, test_dset, epoch+1)
-        else:
-            print('epoch: {}, avg_loss: {:.4f}'.format(epoch, np.mean(losses)))
+        print('Loss: {:.4f}'.format(np.mean(losses)))
+        if args.debug:
+            deep_debug(args, model, test_dset, epoch+1)
         if np.mean(losses) < best_loss:
             best_loss = np.mean(losses) - 1e-3
             best_model.load_state_dict(model.state_dict())
@@ -209,8 +209,8 @@ def deep_debug(args, model, test_dset, epoch):
             print('{}\n{}\n'.format(param, params[param]))
 
     if epoch == 0:
-        open('debug/{}.txt'.format(args.suffix), 'w').close()
-    with open('debug/{}.txt'.format(args.suffix), 'a+') as f:
+        open('debug/{}.txt'.format(args.name), 'w').close()
+    with open('debug/{}.txt'.format(args.name), 'a+') as f:
         if epoch == 0:
             f.write('\t'.join(['mean1', 'mean2', '1>1', '2>1', '1>2', '2>2', 'len1', 'len2']) + '\n')
         data = np.concatenate((params['mean'].flatten(), params['trans'].flatten(), params['lengths']))
@@ -225,7 +225,7 @@ if __name__ == '__main__':
     parser.add_argument('--initialize', nargs='+', choices=['mean', 'cov', 'init', 'trans', 'lengths'])
     parser.add_argument('--batch_size', type=int, default=10)
     parser.add_argument('--epochs', type=int, default=999)
-    parser.add_argument('--suffix', type=str, default='tmp')
+    parser.add_argument('--name', type=str, default='tmp')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--debug_params', nargs='+', choices=['features', 'trans', 'emission', 'initial', 'lengths', 'mean'], default=['mean', 'lengths', 'trans'])
     parser.add_argument('--nosave', action='store_true')
@@ -249,7 +249,7 @@ if __name__ == '__main__':
     torch.save(model, modelpath)
 
     if not args.nosave:
-        metapath = 'models/{}_{}_{}.p'.format(args.dataset, args.model, args.suffix)
+        metapath = 'models/{}.p'.format(args.name)
         meta = {
             'model': modelpath,
             'args': args
@@ -257,7 +257,7 @@ if __name__ == '__main__':
         with open(metapath, 'wb+') as f:
             pickle.dump(meta, f)
 
-    if 'labels' in train_dset[0]:
+    if train_dset[0]['labels'] is not None:
         train_loader = DataLoader(train_dset, batch_size=args.batch_size)
         test_loader = DataLoader(test_dset, batch_size=args.batch_size)
         train_acc, train_action_acc, train_pred = predict(model, train_loader, remap=(args.model == 'unsupervised'))

@@ -119,14 +119,14 @@ def viz_state_seq(model, dataset, remap=True):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--path', help='model meta file name', type=str, required=True)
+    parser.add_argument('--name', help='model meta file name', type=str, required=True)
     args = parser.parse_args()
 
-    with open('models/{}.p'.format(args.path), 'rb') as f:
+    with open('models/{}.p'.format(args.name), 'rb') as f:
         meta = pickle.load(f)
     args = meta['args']
-    _, dataset = data.dataset_from_args(args)
+    dset = data.dataset_from_args(args, 'test')
     model = torch.load(meta['model'])
 
-    viz_state_seq(model, dataset, remap=(args.model == 'unsupervised'))
+    viz_state_seq(model, dset, remap=(args.model == 'unsupervised'))
     viz_parameters(model)
