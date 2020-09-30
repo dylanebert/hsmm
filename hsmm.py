@@ -116,6 +116,7 @@ class SemiMarkovModule(torch.nn.Module):
         parser.add_argument('--block_self_transitions', action='store_true')
         parser.add_argument('--sm_supervised_state_smoothing', type=float, default=1e-2)
         parser.add_argument('--sm_supervised_length_smoothing', type=float, default=1e-1)
+        parser.add_argument('--sm_supervised_cov_smoothing', type=float, default=1e-2)
         parser.add_argument('--sm_feature_projection', action='store_true')
         parser.add_argument('--sm_init_non_projection_parameters_from')
         parser.add_argument('--lr', type=float, default=1e-1)
@@ -140,7 +141,7 @@ class SemiMarkovModule(torch.nn.Module):
         gaussian_means = torch.zeros(self.n_classes, self.feature_dim, dtype=torch.float)
         self.gaussian_means = torch.nn.Parameter(gaussian_means, requires_grad=True)
 
-        gaussian_cov = torch.eye(self.feature_dim, dtype=torch.float)
+        gaussian_cov = torch.zeros(self.n_classes, self.feature_dim, dtype=torch.float)
         self.gaussian_cov = torch.nn.Parameter(gaussian_cov, requires_grad=False)
 
         transition_logits = torch.zeros(self.n_classes, self.n_classes, dtype=torch.float)
@@ -169,11 +170,10 @@ class SemiMarkovModule(torch.nn.Module):
         mean = feats.mean(dim=0, keepdim=True)
         self.gaussian_means.data.zero_()
         self.gaussian_means.data.add_(mean.expand((self.n_classes, self.feature_dim)))
-        self.gaussian_cov.data.zero_()
-        self.gaussian_cov.data.add_(torch.full(self.gaussian_cov.size(), 1e-9, device=self.gaussian_cov.device))
+        self.gaussian_cov.data = torch.ones(self.n_classes, self.feature_dim, device=self.gaussian_cov.device)
 
     def initialize_supervised(self, feature_list, label_list, overrides=['mean', 'cov', 'init', 'trans', 'lengths'], freeze=True):
-        emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, covariance_type='tied_diag', n_classes=self.n_classes, max_k=self.max_k)
+        emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, covariance_type='diag', n_classes=self.n_classes, max_k=self.max_k)
         if 'init' in overrides:
             init_probs = (stats['span_start_counts'] + self.args.sm_supervised_state_smoothing) /\
                 float(stats['instance_count'] + self.args.sm_supervised_state_smoothing * self.n_classes)
@@ -204,13 +204,14 @@ class SemiMarkovModule(torch.nn.Module):
                 self.gaussian_means.requires_grad = False
         if 'cov' in overrides:
             self.gaussian_cov.data.zero_()
-            self.gaussian_cov.data.add_(torch.diag(torch.from_numpy(emission_gmm.covariances_[0]).to(device=self.gaussian_cov.device, dtype=torch.float)))
+            self.gaussian_cov.data.add_(torch.from_numpy(emission_gmm.covariances_).to(device=self.gaussian_cov.device, dtype=torch.float))
+            self.gaussian_cov.data.add_(torch.full(self.gaussian_cov.size(), self.args.sm_supervised_cov_smoothing).to(device=self.gaussian_cov.device, dtype=torch.float))
 
     def fit_supervised(self, feature_list, label_list):
         if self.feature_projector is not None:
             raise NotImplementedError('fit_supervised with feature projector')
 
-        emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, covariance_type='tied_diag', n_classes=self.n_classes, max_k=self.max_k)
+        emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, covariance_type='diag', n_classes=self.n_classes, max_k=self.max_k)
 
         init_probs = (stats['span_start_counts'] + self.args.sm_supervised_state_smoothing) /\
             float(stats['instance_count'] + self.args.sm_supervised_state_smoothing * self.n_classes)
@@ -233,7 +234,8 @@ class SemiMarkovModule(torch.nn.Module):
         self.gaussian_means.data.add_(torch.from_numpy(emission_gmm.means_).to(device=self.gaussian_means.device, dtype=torch.float))
 
         self.gaussian_cov.data.zero_()
-        self.gaussian_cov.data.add_(torch.diag(torch.from_numpy(emission_gmm.covariances_[0]).to(device=self.gaussian_cov.device, dtype=torch.float)))
+        self.gaussian_cov.data.add_(torch.from_numpy(emission_gmm.covariances_).to(device=self.gaussian_cov.device, dtype=torch.float))
+        self.gaussian_cov.data.add_(torch.full(self.gaussian_cov.size(), self.args.sm_supervised_cov_smoothing).to(device=self.gaussian_cov.device, dtype=torch.float))
 
     def transition_log_probs(self, valid_classes):
         """Mask out invalid classes and apply softmax to transition logits"""
@@ -259,22 +261,26 @@ class SemiMarkovModule(torch.nn.Module):
         else:
             class_indices = valid_classes
         class_means = self.gaussian_means[class_indices]
+        class_cov = self.gaussian_cov[class_indices]
 
         B, _, d = features.size()
-        if class_means.dim() == 2:
-            num_classes, d_ = class_means.size()
-            assert d == d_, (d, d_)
-            class_means = class_means.unsqueeze(0)
-        else:
-            _, num_classes, d_ = class_means.size()
-            assert d == d_, (d, d_)
+        assert class_means.dim() == 2
+        num_classes, d_ = class_means.size()
+        assert d == d_, (d, d_)
+        class_means = class_means.unsqueeze(0)
         class_means = class_means.expand(B, num_classes, d)
-        scale_tril = self.gaussian_cov.sqrt()
+
+        num_classes_, d_ = class_cov.size()
+        assert d == d_, (d, d_)
+        assert num_classes == num_classes_, (num_classes, num_classes_)
+        class_cov = torch.diag_embed(class_cov)
+        class_cov = class_cov.expand(B, num_classes, d, d)
 
         log_probs = []
         for c in range(num_classes):
             means_ = class_means[:, c, :]
-            dist = torch.distributions.MultivariateNormal(loc=means_, scale_tril=scale_tril)
+            cov_ = class_cov[:, c, :, :]
+            dist = torch.distributions.MultivariateNormal(loc=means_, covariance_matrix=cov_)
             log_probs.append(dist.log_prob(features.transpose(0, 1)).transpose(0, 1).unsqueeze(-1))
         return torch.cat(log_probs, dim=2)
 

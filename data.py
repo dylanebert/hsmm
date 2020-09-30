@@ -30,8 +30,8 @@ def add_args(parser):
 def dataset_from_args(args, mode='train'):
     assert mode == 'train' or mode == 'test'
     if args.dataset == 'toy':
-        assert args.n_classes == 3
-        dset = Dataset(*synthetic_data(mode), max_k=args.max_k, n_classes=args.n_classes, device=torch.device(args.device))
+        args.n_classes = 3
+        dset = Dataset(*synthetic_data(args, mode), max_k=args.max_k, n_classes=args.n_classes, device=torch.device(args.device))
     elif args.dataset == 'nbc':
         dset = Dataset(*nbc.NBCData(args, mode).to_dataset(), max_k=args.max_k, n_classes=args.n_classes, device=torch.device(args.device))
     elif args.dataset == 'nbc_annotations':
@@ -52,6 +52,7 @@ class Dataset(torch.utils.data.Dataset):
         self.lengths = lengths.to(device)
         if valid_classes is not None:
             valid_classes = [c.to(device) for c in valid_classes]
+            assert len(valid_classes[0]) == n_classes
         self.valid_classes = valid_classes
         self.max_k = max_k
         self.n_classes = n_classes
@@ -76,7 +77,10 @@ def make_features(labels, n_classes, shift_constant=1.0):
     shift.scatter_(2, labels.unsqueeze(2), shift_constant)
     return shift + f
 
-def synthetic_data(mode='train', n_classes=3, max_seq_len=20, K=5, classes_per_seq=None):
+def synthetic_data(args, mode='train'):
+    max_seq_len = args.data_seq_len
+    classes = list(range(args.n_classes))
+    K = 5
     if mode == 'train':
         num_points = args.n_train
     else:
@@ -92,23 +96,18 @@ def synthetic_data(mode='train', n_classes=3, max_seq_len=20, K=5, classes_per_s
         else:
             length = random.randint(K, max_seq_len)
         lengths.append(length)
+        valid_classes.append(classes)
         seq = []
         current_step = 0
-        if classes_per_seq is not None:
-            assert classes_per_seq <= n_classes
-            valid_classes_ = np.random.choice(list(range(n_classes)), size=classes_per_seq, replace=False)
-        else:
-            valid_classes_ = list(range(n_classes))
-        valid_classes.append(valid_classes_)
         while len(seq) < max_seq_len:
             step_len = random.randint(1, K-1)
-            seq_ = valid_classes_[current_step % len(valid_classes_)]
+            seq_ = classes[current_step % args.n_classes]
             seq.extend([seq_] * step_len)
             current_step += 1
         seq = seq[:max_seq_len]
         labels.append(seq)
     labels = torch.LongTensor(labels)
-    features = make_features(labels, n_classes, shift_constant=1.)
+    features = make_features(labels, args.n_classes, shift_constant=1.)
     lengths = torch.LongTensor(lengths)
     valid_classes = [torch.LongTensor(c) for c in valid_classes]
     return labels, features, lengths, valid_classes

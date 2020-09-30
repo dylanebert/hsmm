@@ -200,7 +200,8 @@ def deep_debug(args, model, test_dset, epoch):
         'emission': np.exp(model.emission_log_probs(features, valid_classes).detach().cpu().numpy()),
         'initial': np.exp(model.initial_log_probs(valid_classes).detach().cpu().numpy()),
         'lengths': np.exp(model.poisson_log_rates.detach().cpu().numpy()),
-        'mean': model.gaussian_means.detach().cpu().numpy()
+        'mean': model.gaussian_means.detach().cpu().numpy(),
+        'cov': model.gaussian_cov.detach().cpu().numpy()
     }
 
     if args.debug_params is not None:
@@ -227,7 +228,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=999)
     parser.add_argument('--name', type=str, default='tmp')
     parser.add_argument('--debug', action='store_true')
-    parser.add_argument('--debug_params', nargs='+', choices=['features', 'trans', 'emission', 'initial', 'lengths', 'mean'], default=['mean', 'lengths', 'trans'])
+    parser.add_argument('--debug_params', nargs='+', choices=['features', 'trans', 'emission', 'initial', 'lengths', 'mean', 'cov'], default=['mean', 'cov', 'lengths', 'trans'])
     parser.add_argument('--nosave', action='store_true')
     args = parser.parse_args()
 
