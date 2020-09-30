@@ -13,9 +13,11 @@ assert os.path.exists(NBC_ROOT), 'NBC_ROOT location doesn\'t exist'
 
 def add_args(parser):
     parser.add_argument('--nbc_features', nargs='+', choices=['obj_speeds', 'lhand_speed', 'rhand_speed', 'apple_speed'], default=['obj_speeds'])
-    parser.add_argument('--nbc_labels', choices=['moving'], default=['moving'])
+    parser.add_argument('--nbc_labels', choices=['moving'], default='moving')
     parser.add_argument('--nbc_subsample', type=int, default=90)
     parser.add_argument('--nbc_mini', action='store_true')
+    parser.add_argument('--nbc_filter', help='filter out all-zero features', action='store_true')
+    parser.add_argument('--nbc_filter_window', type=int, default=5)
 
 class NBCData:
     def __init__(self, args, mode='train'):
@@ -24,6 +26,9 @@ class NBCData:
         self.load_spatial()
         self.generate_features()
         self.generate_labels()
+        if args.nbc_filter:
+            self.filter_zeros()
+        self.collate()
 
     def to_dataset(self):
         if self.labels is None:
@@ -34,6 +39,28 @@ class NBCData:
         lengths = torch.LongTensor(self.lengths)
         valid_classes = None
         return labels, features, lengths, valid_classes
+
+    def collate(self):
+        max_seq_len = 0
+        _, d = self.features[0].shape
+        n = len(self.features)
+        for feat, lbls in zip(self.features, self.labels):
+            assert len(feat) == len(lbls)
+            if len(feat) > max_seq_len:
+                max_seq_len = len(feat)
+            _, d = feat.shape
+
+        features = np.zeros((n, max_seq_len, d))
+        labels = np.zeros((n, max_seq_len))
+        lengths = np.zeros((n,))
+        for i, (feat, lbls) in enumerate(zip(self.features, self.labels)):
+            lengths[i] = len(feat)
+            features[i, :len(feat), :] = feat
+            labels[i, :len(lbls)] = lbls
+
+        self.features = features
+        self.labels = labels
+        self.lengths = lengths
 
     def load_spatial(self):
         paths = glob.glob(NBC_ROOT + 'raw/*')
@@ -66,11 +93,7 @@ class NBCData:
         self.spatial.fillna(0, inplace=True)
         self.spatial['speed'].clip(0., 3., inplace=True)
 
-        self.lengths_dict = {}
-        for session, group in self.spatial.groupby('session'):
-            self.lengths_dict[session] = len(group['step'].unique())
-        self.max_seq_len = max(self.lengths_dict.values())
-        self.lengths = np.array(list(self.lengths_dict.values()), dtype=int)
+        self.sessions = sorted(self.spatial['session'].unique())
 
     def subsample(self, session):
         step = self.args.subsample
@@ -82,42 +105,60 @@ class NBCData:
         return spatial
 
     def generate_features(self):
-        features = []
-        if 'obj_speeds' in self.args.nbc_features:
-            for obj in sorted(self.spatial[(self.spatial['dynamic'] == True) & ~(self.spatial['name'].isin(['LeftHand', 'RightHand', 'Head']))]['name'].unique()):
-                feat = self.obj_speed(obj)
+        self.features = []
+        for session in self.sessions:
+            features = []
+            if 'obj_speeds' in self.args.nbc_features:
+                for obj in sorted(self.spatial[(self.spatial['dynamic'] == True) & ~(self.spatial['name'].isin(['LeftHand', 'RightHand', 'Head']))]['name'].unique()):
+                    feat = self.obj_speed(session, obj)
+                    features.append(feat)
+            if 'lhand_speed' in self.args.nbc_features:
+                feat = self.obj_speed(session, 'LeftHand')
                 features.append(feat)
-        if 'lhand_speed' in self.args.nbc_features:
-            feat = self.obj_speed('LeftHand')
-            features.append(feat)
-        if 'rhand_speed' in self.args.nbc_features:
-            feat = self.obj_speed('RightHand')
-            features.append(feat)
-        if 'apple_speed' in self.args.nbc_features:
-            feat = self.obj_speed('Apple')
-            features.append(feat)
-        self.features = np.concatenate(features, axis=-1)
+            if 'rhand_speed' in self.args.nbc_features:
+                feat = self.obj_speed(session, 'RightHand')
+                features.append(feat)
+            if 'apple_speed' in self.args.nbc_features:
+                feat = self.obj_speed(session, 'Apple')
+                features.append(feat)
+            features = np.stack(features, axis=-1)
+            self.features.append(features)
 
     def generate_labels(self):
-        if self.args.nbc_labels == 'moving':
-            self.labels = np.any(self.features > 0, axis=-1).astype(int)
-        else:
-            assert self.args.nbc_labels == 'none'
+        labels = []
+        assert self.args.nbc_labels == 'moving'
+        for feat in self.features:
+            labels_ = np.any(feat > 0, axis=-1).astype(int)
+            labels.append(labels_)
+        self.labels = labels
 
-    def obj_speed(self, obj):
-        feat = []
-        for session in self.lengths_dict.keys():
-            group = self.spatial[self.spatial['session'] == session]
-            seq = np.zeros((self.max_seq_len,))
-            for i, (step, rows) in enumerate(group.groupby('step')):
-                row = rows[rows['name'] == obj]
-                if not len(row) == 1:
-                    #print('Speed not found for {} at step {}'.format(obj, step))
-                    continue
-                row = row.iloc[0]
-                seq[i] = row['speed']
-            feat.append(seq[:, np.newaxis])
-        return np.stack(feat, axis=0)
+    def filter_zeros(self):
+        features = []
+        labels = []
+        for feat, lbls in zip(self.features, self.labels):
+            rolled = np.roll(feat, self.args.nbc_filter_window, axis=0) + feat + np.roll(feat, -self.args.nbc_filter_window, axis=0)
+            zero_mask = np.all(rolled == 0, axis=-1)
+            if np.all(zero_mask == True):
+                continue
+            feat = feat[~zero_mask]
+            lbls = lbls[~zero_mask]
+            features.append(feat)
+            labels.append(lbls)
+        self.features = features
+        self.labels = labels
+
+    def obj_speed(self, session, obj):
+        group = self.spatial[self.spatial['session'] == session]
+        n = len(group['step'].unique())
+        seq = np.zeros((n,))
+        for i, (step, rows) in enumerate(group.groupby('step')):
+            row = rows[rows['name'] == obj]
+            if not len(row) == 1:
+                #print('Speed not found for {} at step {}'.format(obj, step))
+                continue
+            row = row.iloc[0]
+            seq[i] = row['speed']
+        return seq
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

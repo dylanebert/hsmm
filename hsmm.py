@@ -116,7 +116,7 @@ class SemiMarkovModule(torch.nn.Module):
         parser.add_argument('--block_self_transitions', action='store_true')
         parser.add_argument('--sm_supervised_state_smoothing', type=float, default=1e-2)
         parser.add_argument('--sm_supervised_length_smoothing', type=float, default=1e-1)
-        parser.add_argument('--sm_supervised_cov_smoothing', type=float, default=1e-2)
+        parser.add_argument('--sm_supervised_cov_smoothing', type=float, default=0.)
         parser.add_argument('--sm_feature_projection', action='store_true')
         parser.add_argument('--sm_init_non_projection_parameters_from')
         parser.add_argument('--lr', type=float, default=1e-1)
@@ -172,8 +172,8 @@ class SemiMarkovModule(torch.nn.Module):
         self.gaussian_means.data.add_(mean.expand((self.n_classes, self.feature_dim)))
         self.gaussian_cov.data = torch.ones(self.n_classes, self.feature_dim, device=self.gaussian_cov.device)
 
-    def initialize_supervised(self, feature_list, label_list, overrides=['mean', 'cov', 'init', 'trans', 'lengths'], freeze=True):
-        emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, covariance_type='diag', n_classes=self.n_classes, max_k=self.max_k)
+    def initialize_supervised(self, feature_list, label_list, length_list, overrides=['mean', 'cov', 'init', 'trans', 'lengths'], freeze=True):
+        emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, length_list, covariance_type='diag', n_classes=self.n_classes, max_k=self.max_k)
         if 'init' in overrides:
             init_probs = (stats['span_start_counts'] + self.args.sm_supervised_state_smoothing) /\
                 float(stats['instance_count'] + self.args.sm_supervised_state_smoothing * self.n_classes)
@@ -207,11 +207,11 @@ class SemiMarkovModule(torch.nn.Module):
             self.gaussian_cov.data.add_(torch.from_numpy(emission_gmm.covariances_).to(device=self.gaussian_cov.device, dtype=torch.float))
             self.gaussian_cov.data.add_(torch.full(self.gaussian_cov.size(), self.args.sm_supervised_cov_smoothing).to(device=self.gaussian_cov.device, dtype=torch.float))
 
-    def fit_supervised(self, feature_list, label_list):
+    def fit_supervised(self, feature_list, label_list, length_list):
         if self.feature_projector is not None:
             raise NotImplementedError('fit_supervised with feature projector')
 
-        emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, covariance_type='diag', n_classes=self.n_classes, max_k=self.max_k)
+        emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, length_list, covariance_type='diag', n_classes=self.n_classes, max_k=self.max_k)
 
         init_probs = (stats['span_start_counts'] + self.args.sm_supervised_state_smoothing) /\
             float(stats['instance_count'] + self.args.sm_supervised_state_smoothing * self.n_classes)
@@ -476,12 +476,9 @@ def sliding_sum(inputs, k):
     assert ret.shape == inputs.shape
     return ret
 
-def semimarkov_sufficient_stats(feature_list, label_list, covariance_type, n_classes, max_k=None):
-    assert len(feature_list) == len(label_list)
-    if covariance_type == 'tied_diag':
-        emissions = GaussianMixture(n_classes, covariance_type='diag')
-    else:
-        emissions = GaussianMixture(n_classes, covariance_type=covariance_type)
+def semimarkov_sufficient_stats(feature_list, label_list, length_list, covariance_type, n_classes, max_k=None):
+    assert len(feature_list) == len(label_list) == len(length_list)
+    emissions = GaussianMixture(n_classes, covariance_type=covariance_type)
     X_l = []
     r_l = []
 
@@ -490,8 +487,8 @@ def semimarkov_sufficient_stats(feature_list, label_list, covariance_type, n_cla
     span_start_counts = np.zeros(n_classes, dtype=np.float32)
     span_transition_counts = np.zeros((n_classes, n_classes), dtype=np.float32)
     instance_count = 0
-    for X, labels in zip(feature_list, label_list):
-        X = X.cpu(); labels = labels.cpu()
+    for X, labels, seq_len in zip(feature_list, label_list, length_list):
+        X = X.cpu(); labels = labels.cpu(); seq_len = seq_len.cpu().numpy()
         X_l.append(X)
         r = np.zeros((X.shape[0], n_classes))
         r[np.arange(X.shape[0]), labels] = 1
@@ -500,9 +497,14 @@ def semimarkov_sufficient_stats(feature_list, label_list, covariance_type, n_cla
         spans = labels_to_spans(labels.unsqueeze(0), max_k)
         spans = rle_spans(spans, torch.LongTensor([spans.size(1)]))[0]
         prev = None
+        length_ = 0
         for idx, (symbol, length) in enumerate(spans):
             if idx == 0:
                 span_start_counts[symbol] += 1
+                length_ = 0
+            length_ += length
+            if length_ > seq_len:
+                break
             span_counts[symbol] += 1
             span_lengths[symbol] += length
             if prev is not None:
@@ -513,10 +515,7 @@ def semimarkov_sufficient_stats(feature_list, label_list, covariance_type, n_cla
     X_arr = np.vstack(X_l)
     r_arr = np.vstack(r_l)
     emissions._initialize(X_arr, r_arr)
-    if covariance_type == 'tied_diag':
-        cov, prec_chol = get_diagonal_covariances(X_arr)
-        emissions.covariances_[:] = np.copy(cov)
-        emissions.precisions_cholesky_[:] = np.copy(prec_chol)
+
     return emissions, {
         'span_counts': span_counts,
         'span_lengths': span_lengths,
@@ -538,12 +537,6 @@ def optimal_map(pred, true, possible):
     remapped = pred.cpu().clone()
     remapped.apply_(lambda label: mapping[label])
     return remapped, mapping
-
-def get_diagonal_covariances(data):
-    model = GaussianMixture(n_components=1, covariance_type='diag')
-    responsibilities = np.ones((data.shape[0], 1))
-    model._initialize(data, responsibilities)
-    return model.covariances_, model.precisions_cholesky_
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

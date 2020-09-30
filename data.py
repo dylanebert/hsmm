@@ -279,7 +279,7 @@ def labels_to_spans(labels, max_k):
 def spans_to_labels(spans):
     _, N = spans.size()
     labels = spans[:, 0]
-    assert (labels != -1).all()
+    assert (labels != -1).all(), spans
     values = [labels.unsqueeze(1)]
     for n in range(1, N):
         span = spans[:, n]

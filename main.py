@@ -38,11 +38,13 @@ def train_supervised(args, train_dset, test_dset, n_classes):
 
     train_features = []
     train_labels = []
+    train_lengths = []
     for i in range(len(train_dset)):
         sample = train_dset[i]
         train_features.append(sample['features'])
         train_labels.append(sample['labels'])
-    model.fit_supervised(train_features, train_labels)
+        train_lengths.append(sample['lengths'])
+    model.fit_supervised(train_features, train_labels, train_lengths)
 
     if args.debug:
         deep_debug(args, model, test_dset, 0)
@@ -66,14 +68,16 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
     if args.override is not None or args.initialize is not None:
         train_features = []
         train_labels = []
+        train_lengths = []
         for i in range(len(train_dset)):
             sample = train_dset[i]
             train_features.append(sample['features'])
             train_labels.append(sample['labels'])
+            train_lengths.append(sample['lengths'])
         if args.initialize is not None:
-            model.initialize_supervised(train_features, train_labels, overrides=args.initialize, freeze=False)
+            model.initialize_supervised(train_features, train_labels, train_lengths, overrides=args.initialize, freeze=False)
         if args.override is not None:
-            model.initialize_supervised(train_features, train_labels, overrides=args.override, freeze=True)
+            model.initialize_supervised(train_features, train_labels, train_lengths, overrides=args.override, freeze=True)
 
     def report_acc(epoch):
         train_remap_acc, train_action_remap_acc, train_pred = predict(model, train_loader, remap=True)
