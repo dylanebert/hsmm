@@ -11,16 +11,16 @@ class FeedForward(torch.nn.Module):
     @classmethod
     def add_args(cls, parser):
         parser.add_argument('--n_layers', type=int, default=1)
-        parser.add_argument('--hidden_size', type=int, default=100)
+        parser.add_argument('--hidden_size', type=int, default=32)
 
     def __init__(self, args, input_size, output_size):
         super(FeedForward, self).__init__()
         self.args = args
-        self.in_layer = torch.nn.Linear(input_size, args.hidden_size, bias=True)
-        self.out_layer = torch.nn.Linear(args.hidden_size, output_size, bias=True)
+        self.in_layer = torch.nn.Linear(input_size, args.hidden_size, bias=False)
+        self.out_layer = torch.nn.Linear(args.hidden_size, output_size, bias=False)
         for i in range(args.n_layers):
             name = 'cell{}'.format(i)
-            cell = torch.nn.Linear(args.hidden_size, args.hidden_size, bias=True)
+            cell = torch.nn.Linear(args.hidden_size, args.hidden_size, bias=False)
             setattr(self, name, cell)
 
     def reset_parameters(self):
@@ -47,72 +47,35 @@ class FeedForward(torch.nn.Module):
             x = F.relu(getattr(self, name)(x))
         return self.out_layer(x)
 
-class NICE(torch.nn.Module):
+class Projector(torch.nn.Module):
     @classmethod
     def add_args(cls, parser):
         FeedForward.add_args(parser)
-        parser.add_argument('--n_blocks', type=int, default=4)
-        parser.add_argument('--scale', action='store_true')
-        parser.add_argument('--scale_no_zero', action='store_true')
+        parser.add_argument('--n_blocks', type=int, default=2)
 
     def __init__(self, args, input_size):
-        super(NICE, self).__init__()
+        super(Projector, self).__init__()
         self.args = args
         for i in range(args.n_blocks):
             name = 'block{}'.format(i)
-            block = FeedForward(args, input_size // 2, input_size // 2)
+            block = FeedForward(args, input_size, input_size)
             setattr(self, name, block)
-            if args.scale:
-                scale_name = 'scale_block{}'.format(i)
-                scale_block = FeedForward(args, input_size // 2, input_size // 2)
-                if not args.scale_no_zero:
-                    scale_block.init_identity()
-                setattr(self, scale_name, scale_block)
 
     def reset_parameters(self):
         for i in range(self.args.n_blocks):
             name = 'block{}'.format(i)
             getattr(self, name).reset_parameters()
-            if self.args.scale:
-                name = 'scale_block{}'.format(i)
-                getattr(self, name).reset_parameters()
 
     def forward(self, x):
-        jacobian_loss = torch.zeros(x.size(0), device=x.device, requires_grad=False)
-
-        n_feat = x.size()[-1]
         for i in range(self.args.n_blocks):
-            name = 'cell{}'.format(i)
-            h1, h2 = torch.split(x, n_feat // 2, dim=-1)
-            if i % 2 == 1:
-                h1, h2 = h2, h1
-            t = getattr(self, name)(h1)
-            if self.args.scale:
-                s = getattr(self, 'scale_block{}'.format(i))(h1)
-                jacobian_loss += s.sum(dim=-1).sum(dim=-1)
-                h2_p = torch.exp(s) * h2 + t
-            else:
-                h2_p = h2 + t
-            if i % 2 == 1:
-                h1, h2_p = h2_p, h1
-            h = torch.cat((h1, h2_p), dim=-1)
-        return h, jacobian_loss
-
-class ResidualLayer(torch.nn.Module):
-    def __init__(self, dim=100):
-        super(ResidualLayer, self).__init__()
-        self.h1 = torch.nn.Linear(dim, dim)
-        self.h2 = torch.nn.Linear(dim, dim)
-
-    def forward(self, x):
-        z = F.relu(self.h1(x))
-        z = F.relu(self.h2(z))
-        return x + z
+            name = 'block{}'.format(i)
+            x = getattr(self, name)(x)
+        return x
 
 class SemiMarkovModule(torch.nn.Module):
     @classmethod
     def add_args(cls, parser):
-        NICE.add_args(parser)
+        Projector.add_args(parser)
         parser.add_argument('--block_self_transitions', action='store_true')
         parser.add_argument('--sm_supervised_state_smoothing', type=float, default=1e-2)
         parser.add_argument('--sm_supervised_length_smoothing', type=float, default=1e-1)
@@ -153,7 +116,7 @@ class SemiMarkovModule(torch.nn.Module):
 
     def init_projector(self):
         if self.args.sm_feature_projection:
-            self.feature_projector = NICE(self.args, input_size=self.feature_dim)
+            self.feature_projector = Projector(self.args, input_size=self.feature_dim)
         else:
             self.feature_projector = None
 
@@ -165,7 +128,7 @@ class SemiMarkovModule(torch.nn.Module):
             feats.append(data[i, :lengths[i]])
         feats = torch.cat(feats, dim=0)
         if self.feature_projector:
-            feats, _ = self.feature_projector(feats)
+            feats = self.feature_projector(feats)
         assert d == self.feature_dim
         mean = feats.mean(dim=0, keepdim=True)
         self.gaussian_means.data.zero_()
@@ -382,10 +345,9 @@ class SemiMarkovModule(torch.nn.Module):
         self.kl = torch.autograd.Variable(torch.zeros(features.size(0)).to(features.device), requires_grad=True)
 
         if self.feature_projector is not None:
-            projected_features, log_det = self.feature_projector(features)
+            projected_features = self.feature_projector(features)
         else:
             projected_features = features
-            log_det = torch.zeros(features.size(0), device=features.device, requires_grad=False)
 
         scores = self.log_hsmm(
             self.transition_log_probs(valid_classes),
@@ -396,7 +358,7 @@ class SemiMarkovModule(torch.nn.Module):
             add_eos=add_eos
         )
 
-        return scores, log_det
+        return scores
 
     def viterbi(self, features, lengths, valid_classes_per_instance, add_eos=True):
         if valid_classes_per_instance is not None:
@@ -406,7 +368,7 @@ class SemiMarkovModule(torch.nn.Module):
             valid_classes = None
             C = self.n_classes
 
-        scores, _ = self.score_features(features, lengths, valid_classes, add_eos=add_eos)
+        scores = self.score_features(features, lengths, valid_classes, add_eos=add_eos)
 
         if add_eos:
             eos_lengths = lengths + 1
@@ -435,7 +397,7 @@ class SemiMarkovModule(torch.nn.Module):
             valid_classes = None
             C = self.n_classes
 
-        scores, log_det = self.score_features(features, lengths, valid_classes, add_eos=add_eos)
+        scores = self.score_features(features, lengths, valid_classes, add_eos=add_eos)
 
         K = scores.size(2)
         assert K <= self.max_k or (self.max_k == 1 and K == 2)
@@ -450,7 +412,7 @@ class SemiMarkovModule(torch.nn.Module):
         dist = SemiMarkovCRF(scores, lengths=eos_lengths)
         log_likelihood = dist.partition.mean()
 
-        return log_likelihood, log_det.mean()
+        return log_likelihood
 
     def add_eos(self, spans, lengths):
         b, _ = spans.size()

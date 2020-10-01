@@ -107,7 +107,7 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
                 valid_classes = None
             N_ = lengths.max().item()
             features = features[:, :N_, :]
-            loss, _ = model.log_likelihood(features, lengths, valid_classes)
+            loss = model.log_likelihood(features, lengths, valid_classes)
             loss = -loss
             loss.backward()
             losses.append(loss.item())
@@ -207,6 +207,9 @@ def deep_debug(args, model, test_dset, epoch):
         'mean': model.gaussian_means.detach().cpu().numpy(),
         'cov': model.gaussian_cov.detach().cpu().numpy()
     }
+
+    if args.sm_feature_projection:
+        params['mean'] = model.feature_projector(model.gaussian_means).detach().cpu().numpy()
 
     if args.debug_params is not None:
         np.set_printoptions(suppress=True)

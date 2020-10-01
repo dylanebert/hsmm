@@ -133,7 +133,7 @@ def unit_test_data(args, mode='train'):
         feat = np.zeros((seq_len, args.n_dim))
         for j, label in enumerate(seq):
             if label == 1:
-                feat[j, random.randint(0, args.n_dim - 1)] = 1
+                feat[j, :] = 1
         labels.append(seq)
         features.append(feat)
     labels = torch.LongTensor(labels)
