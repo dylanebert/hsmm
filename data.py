@@ -33,7 +33,9 @@ def dataset_from_args(args, mode='train'):
         args.n_classes = 3
         dset = Dataset(*synthetic_data(args, mode), max_k=args.max_k, n_classes=args.n_classes, device=torch.device(args.device))
     elif args.dataset == 'nbc':
-        dset = Dataset(*nbc.NBCData(args, mode).to_dataset(), max_k=args.max_k, n_classes=args.n_classes, device=torch.device(args.device))
+        nbc_data = nbc.NBCData(args, mode)
+        dset = Dataset(*nbc_data.to_dataset(), max_k=args.max_k, n_classes=args.n_classes, device=torch.device(args.device))
+        dset.steps = nbc_data.steps
     elif args.dataset == 'nbc_annotations':
         assert args.n_classes == 4
         dset = Dataset(*nbc_annotations_dataset(args, mode), max_k=args.max_k, n_classes=args.n_classes, device=torch.device(args.device))
@@ -48,6 +50,8 @@ class Dataset(torch.utils.data.Dataset):
     def __init__(self, labels, features, lengths, valid_classes, max_k, n_classes, device=torch.device('cuda')):
         if labels is not None:
             self.labels = labels.to(device)
+        else:
+            self.labels = None
         self.features = features.to(device)
         self.lengths = lengths.to(device)
         if valid_classes is not None:
@@ -56,9 +60,10 @@ class Dataset(torch.utils.data.Dataset):
         self.valid_classes = valid_classes
         self.max_k = max_k
         self.n_classes = n_classes
+        self.steps = None
 
     def __len__(self):
-        return self.labels.size(0)
+        return self.features.size(0)
 
     def __getitem__(self, index):
         batch = {'features': self.features[index], 'lengths': self.lengths[index]}
@@ -68,6 +73,8 @@ class Dataset(torch.utils.data.Dataset):
             batch['spans'] = labels_to_spans(labels.unsqueeze(0), max_k=self.max_k).squeeze(0)
         if self.valid_classes is not None:
             batch['valid_classes'] = self.valid_classes[index]
+        if self.steps is not None:
+            batch['steps'] = self.steps[index]
         return batch
 
 def make_features(labels, n_classes, shift_constant=1.0):
@@ -294,6 +301,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     dset = dataset_from_args(args, 'test')
-    if dset[0]['labels'] is not None:
+    if 'labels' in dset[0]:
         print(dset[0]['labels'].detach().cpu().numpy())
     print(dset[0]['features'].detach().cpu().numpy())
