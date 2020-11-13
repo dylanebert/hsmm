@@ -4,95 +4,28 @@ import torch.nn.functional as F
 from torch_struct import SemiMarkovCRF
 import argparse
 from sklearn.mixture import GaussianMixture
-from data import labels_to_spans, spans_to_labels, rle_spans
 from scipy.optimize import linear_sum_assignment
-
-class FeedForward(torch.nn.Module):
-    @classmethod
-    def add_args(cls, parser):
-        parser.add_argument('--n_layers', type=int, default=1)
-        parser.add_argument('--hidden_size', type=int, default=32)
-
-    def __init__(self, args, input_size, output_size):
-        super(FeedForward, self).__init__()
-        self.args = args
-        self.in_layer = torch.nn.Linear(input_size, args.hidden_size, bias=False)
-        self.out_layer = torch.nn.Linear(args.hidden_size, output_size, bias=False)
-        for i in range(args.n_layers):
-            name = 'cell{}'.format(i)
-            cell = torch.nn.Linear(args.hidden_size, args.hidden_size, bias=False)
-            setattr(self, name, cell)
-
-    def reset_parameters(self):
-        self.in_layer.reset_parameters()
-        self.out_layer.reset_parameters()
-        for i in range(self.args.n_layers):
-            name = 'cell{}'.format(i)
-            getattr(self, name).reset_parameters()
-
-    def init_identity(self):
-        self.in_layer.weight.data.zero_()
-        self.in_layer.bias.data.zero_()
-        self.out_layer.weight.data.zero_()
-        self.out_layer.bias.data.zero_()
-        for i in range(self.args.n_layers):
-            name = 'cell{}'.format(i)
-            getattr(self, name).weight.data.zero_()
-            getattr(self, name).bias.data.zero_()
-
-    def forward(self, x):
-        x = F.relu(self.in_layer(x))
-        for i in range(self.args.n_layers):
-            name = 'cell{}'.format(i)
-            x = F.relu(getattr(self, name)(x))
-        return self.out_layer(x)
-
-class Projector(torch.nn.Module):
-    @classmethod
-    def add_args(cls, parser):
-        FeedForward.add_args(parser)
-        parser.add_argument('--n_blocks', type=int, default=2)
-
-    def __init__(self, args, input_size):
-        super(Projector, self).__init__()
-        self.args = args
-        for i in range(args.n_blocks):
-            name = 'block{}'.format(i)
-            block = FeedForward(args, input_size, input_size)
-            setattr(self, name, block)
-
-    def reset_parameters(self):
-        for i in range(self.args.n_blocks):
-            name = 'block{}'.format(i)
-            getattr(self, name).reset_parameters()
-
-    def forward(self, x):
-        for i in range(self.args.n_blocks):
-            name = 'block{}'.format(i)
-            x = getattr(self, name)(x)
-        return x
 
 class SemiMarkovModule(torch.nn.Module):
     @classmethod
     def add_args(cls, parser):
-        Projector.add_args(parser)
-        parser.add_argument('--block_self_transitions', action='store_true')
+        parser.add_argument('--sm_allow_self_transitions', type=bool, default=True)
+        parser.add_argument('--sm_lr', type=float, default=1e-1)
         parser.add_argument('--sm_supervised_state_smoothing', type=float, default=1e-2)
         parser.add_argument('--sm_supervised_length_smoothing', type=float, default=1e-1)
         parser.add_argument('--sm_supervised_cov_smoothing', type=float, default=0.)
         parser.add_argument('--sm_feature_projection', action='store_true')
         parser.add_argument('--sm_init_non_projection_parameters_from')
-        parser.add_argument('--lr', type=float, default=1e-1)
 
-    def __init__(self, args, n_classes, n_dims, max_k):
+    def __init__(self, args, n_classes, n_dims):
         super(SemiMarkovModule, self).__init__()
         self.args = args
         self.n_classes = n_classes
         self.input_feature_dim = n_dims
         self.feature_dim = n_dims
-        self.allow_self_transitions = not args.block_self_transitions
-        self.max_k = max_k
-        self.learning_rate = args.lr
+        self.max_k = args.max_k
+        self.allow_self_transitions = args.sm_allow_self_transitions
+        self.learning_rate = args.sm_lr
         self.init_params()
         self.init_projector()
 
@@ -499,6 +432,59 @@ def optimal_map(pred, true, possible):
     remapped = pred.cpu().clone()
     remapped.apply_(lambda label: mapping[label])
     return remapped, mapping
+
+def rle_spans(spans, lengths):
+    b, _ = spans.size()
+    all_rle = []
+    for i in range(b):
+        rle_ = []
+        spans_ = spans[i, :lengths[i]]
+        symbol_ = None
+        count = 0
+        for symbol in spans_:
+            symbol = symbol.item()
+            if symbol_ is None or symbol != -1:
+                if symbol_ is not None:
+                    assert count > 0
+                    rle_.append((symbol_, count))
+                count = 0
+                symbol_ = symbol
+            count += 1
+        if symbol_ is not None:
+            assert count > 0
+            rle_.append((symbol_, count))
+        assert sum(count for _, count in rle_) == lengths[i]
+        all_rle.append(rle_)
+    return all_rle
+
+def labels_to_spans(labels, max_k):
+    _, N = labels.size()
+    prev = labels[:, 0]
+    values = [prev.unsqueeze(1)]
+    lengths = torch.ones_like(prev)
+    for n in range(1, N):
+        label = labels[:, n]
+        same_symbol = (prev == label)
+        if max_k is not None:
+            same_symbol = same_symbol & (lengths < max_k - 1)
+        encoded = torch.where(same_symbol, torch.full([1], -1, device=same_symbol.device, dtype=torch.long), label)
+        lengths = torch.where(same_symbol, lengths, torch.full([1], 0, device=same_symbol.device, dtype=torch.long))
+        lengths += 1
+        values.append(encoded.unsqueeze(1))
+        prev = label
+    return torch.cat(values, dim=1)
+
+def spans_to_labels(spans):
+    _, N = spans.size()
+    labels = spans[:, 0]
+    assert (labels != -1).all(), spans
+    values = [labels.unsqueeze(1)]
+    for n in range(1, N):
+        span = spans[:, n]
+        labels_ = torch.where(span == -1, labels, span)
+        values.append(labels_.unsqueeze(1))
+        labels = labels_
+    return torch.cat(values, dim=1)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
