@@ -37,7 +37,7 @@ class SemiMarkovModule(torch.nn.Module):
         gaussian_means = torch.zeros(self.n_classes, self.feature_dim, dtype=torch.float)
         self.gaussian_means = torch.nn.Parameter(gaussian_means, requires_grad=True)
 
-        gaussian_cov = torch.zeros(self.n_classes, self.feature_dim, dtype=torch.float)
+        gaussian_cov = torch.ones(self.n_classes, self.feature_dim, dtype=torch.float)
         self.gaussian_cov = torch.nn.Parameter(gaussian_cov, requires_grad=False)
 
         transition_logits = torch.zeros(self.n_classes, self.n_classes, dtype=torch.float)
