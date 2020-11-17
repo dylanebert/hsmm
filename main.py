@@ -31,7 +31,7 @@ class SemiMarkovDataset(torch.utils.data.Dataset):
         steps = np.zeros((n, max_seq_len))
         for i, session in enumerate(dset.features[type].keys()):
             feat = dset.features[type][session]
-            steps_ = dset.sequences[type][session]['step'].unique()
+            steps_ = dset.steps[type][session]
             features[i, :feat.shape[0]] = dset.features[type][session]
             lengths[i] = feat.shape[0]
             labels[i, :feat.shape[0]] = dset.labels[type][session]
@@ -81,6 +81,16 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
     model = SemiMarkovModule(args, n_classes, n_dim).cuda()
     model.initialize_gaussian(train_dset.features, train_dset.lengths)
     optimizer = torch.optim.Adam(model.parameters(), model.learning_rate)
+
+    features = []
+    lengths = []
+    labels = []
+    for i in range(len(train_dset)):
+        sample = train_dset[i]
+        features.append(sample['features'])
+        lengths.append(sample['lengths'])
+        labels.append(sample['labels'])
+    model.initialize_supervised(features, labels, lengths, overrides=['cov'])
 
     model.train()
     best_loss = 1e9
@@ -186,6 +196,9 @@ def viz(gold, pred):
     pred = pred[np.newaxis, :]
     N = gold.shape[-1]
 
+    print(gold)
+    print(pred)
+
     gold = np.tile(gold, (N // 10, 1))
     pred = np.tile(pred, (N // 10, 1))
 
@@ -210,14 +223,16 @@ if __name__ == '__main__':
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--max_k', help='maximum length of one state', type=int, default=10)
     args = parser.parse_args([
-        '--supervised',
-        '--subsample', '90',
+        '--subsample', '45',
         '--train_sequencing', 'session',
         '--test_sequencing', 'session',
-        '--features',
-        'speed:Apple',
         '--label_method', 'nonzero_by_dim',
-        '--debug'
+        '--debug',
+        '--features',
+        'moving:Apple',
+        #'moving:Banana',
+        #'--supervised',
+        '--sm_allow_self_transitions'
     ])
 
     dset = NBC(args)
@@ -232,4 +247,4 @@ if __name__ == '__main__':
     gold, pred, pred_remapped = predict(model, test_dset)
     eval(gold, pred)
     eval(gold, pred_remapped)
-    #viz(gold[0], pred[0])
+    viz(gold[0], pred_remapped[0])

@@ -9,7 +9,7 @@ from scipy.optimize import linear_sum_assignment
 class SemiMarkovModule(torch.nn.Module):
     @classmethod
     def add_args(cls, parser):
-        parser.add_argument('--sm_allow_self_transitions', type=bool, default=True)
+        parser.add_argument('--sm_allow_self_transitions', action='store_true')
         parser.add_argument('--sm_lr', type=float, default=1e-1)
         parser.add_argument('--sm_supervised_state_smoothing', type=float, default=1e-2)
         parser.add_argument('--sm_supervised_length_smoothing', type=float, default=1e-1)
@@ -100,7 +100,7 @@ class SemiMarkovModule(torch.nn.Module):
                 self.gaussian_means.requires_grad = False
         if 'cov' in overrides:
             self.gaussian_cov.data.zero_()
-            self.gaussian_cov.data.add_(torch.from_numpy(emission_gmm.covariances_).to(device=self.gaussian_cov.device, dtype=torch.float))
+            self.gaussian_cov.data.add_(torch.from_numpy(emission_gmm.covariances_ + 1e-3).to(device=self.gaussian_cov.device, dtype=torch.float))
             self.gaussian_cov.data.add_(torch.full(self.gaussian_cov.size(), self.args.sm_supervised_cov_smoothing).to(device=self.gaussian_cov.device, dtype=torch.float))
 
     def fit_supervised(self, feature_list, label_list, length_list):
@@ -130,7 +130,7 @@ class SemiMarkovModule(torch.nn.Module):
         self.gaussian_means.data.add_(torch.from_numpy(emission_gmm.means_).to(device=self.gaussian_means.device, dtype=torch.float))
 
         self.gaussian_cov.data.zero_()
-        self.gaussian_cov.data.add_(torch.from_numpy(emission_gmm.covariances_).to(device=self.gaussian_cov.device, dtype=torch.float))
+        self.gaussian_cov.data.add_(torch.from_numpy(emission_gmm.covariances_ + 1e-3).to(device=self.gaussian_cov.device, dtype=torch.float))
         self.gaussian_cov.data.add_(torch.full(self.gaussian_cov.size(), self.args.sm_supervised_cov_smoothing).to(device=self.gaussian_cov.device, dtype=torch.float))
 
     def transition_log_probs(self, valid_classes):
