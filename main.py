@@ -55,7 +55,7 @@ class SemiMarkovDataset(torch.utils.data.Dataset):
         }
         return batch
 
-def train_supervised(args, train_dset, test_dset, n_classes):
+def train_supervised(args, train_dset, dev_dset, n_classes):
     n_dim = train_dset[0]['features'].shape[-1]
     model = SemiMarkovModule(args, n_classes, n_dim).cuda()
 
@@ -70,12 +70,12 @@ def train_supervised(args, train_dset, test_dset, n_classes):
 
     model.fit_supervised(features, labels, lengths)
     if args.debug:
-        debug(model, test_dset, 0)
+        debug(model, dev_dset, 0)
     return model
 
-def train_unsupervised(args, train_dset, test_dset, n_classes):
+def train_unsupervised(args, train_dset, dev_dset, n_classes):
     train_loader = torch.utils.data.DataLoader(train_dset, batch_size=10)
-    test_loader = torch.utils.data.DataLoader(test_dset, batch_size=10)
+    dev_loader = torch.utils.data.DataLoader(dev_dset, batch_size=10)
 
     n_dim = train_dset[0]['features'].shape[-1]
     model = SemiMarkovModule(args, n_classes, n_dim).cuda()
@@ -98,7 +98,7 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
     k = 0; patience = 5
 
     def report_acc():
-        gold, pred, pred_remapped = predict(model, test_dset)
+        gold, pred, pred_remapped = predict(model, dev_dset)
         eval(gold, pred_remapped)
 
     epoch = 0
@@ -118,7 +118,7 @@ def train_unsupervised(args, train_dset, test_dset, n_classes):
         print('Epoch: {}, Loss: {:.4f}'.format(epoch, np.mean(losses)))
         report_acc()
         if args.debug:
-            debug(model, test_dset, epoch)
+            debug(model, dev_dset, epoch)
         epoch += 1
         if np.mean(losses) < best_loss:
             best_loss = np.mean(losses) - 1e-3
@@ -173,9 +173,9 @@ def eval(gold, pred):
         a_total += gold_[gold_ > 0].shape[0]
     print('Accuracy: {:.2f}, Action Accuracy: {:.2f}'.format(100. * match / total, 100. * a_match / a_total))
 
-def debug(model, test_dset, epoch):
-    features = test_dset[0]['features'].unsqueeze(0)
-    lengths = test_dset[0]['lengths'].unsqueeze(0)
+def debug(model, dev_dset, epoch):
+    features = dev_dset[0]['features'].unsqueeze(0)
+    lengths = dev_dset[0]['lengths'].unsqueeze(0)
 
     params = {
         'features': features.cpu().numpy(),
@@ -221,30 +221,34 @@ if __name__ == '__main__':
     SemiMarkovModule.add_args(parser)
     parser.add_argument('--supervised', action='store_true')
     parser.add_argument('--debug', action='store_true')
-    parser.add_argument('--max_k', help='maximum length of one state', type=int, default=10)
+    parser.add_argument('--max_k', help='maximum length of one state', type=int, default=5)
     args = parser.parse_args([
         '--subsample', '45',
+        '--trim',
         '--train_sequencing', 'session',
+        '--dev_sequencing', 'session',
         '--test_sequencing', 'session',
-        '--label_method', 'nonzero_by_dim',
+        '--label_method', 'actions',
         '--debug',
         '--features',
-        'moving:Apple',
-        #'moving:Banana',
-        #'--supervised',
-        '--sm_allow_self_transitions'
+            'speed:most_moving_obj',
+            'relVelZ:most_moving_hand',
+            'relVelX:most_moving_hand',
+            'velY:most_moving_hand',
+        #'--sm_allow_self_transitions',
+        '--supervised'
     ])
 
     dset = NBC(args)
     n_classes = dset.n_classes
     train_dset = SemiMarkovDataset(args, dset, type='train')
-    test_dset = SemiMarkovDataset(args, dset, type='test')
+    dev_dset = SemiMarkovDataset(args, dset, type='dev')
 
     if args.supervised:
-        model = train_supervised(args, train_dset, test_dset, n_classes)
+        model = train_supervised(args, train_dset, dev_dset, n_classes)
     else:
-        model = train_unsupervised(args, train_dset, test_dset, n_classes)
-    gold, pred, pred_remapped = predict(model, test_dset)
+        model = train_unsupervised(args, train_dset, dev_dset, n_classes)
+    gold, pred, pred_remapped = predict(model, dev_dset)
     eval(gold, pred)
     eval(gold, pred_remapped)
     viz(gold[0], pred_remapped[0])

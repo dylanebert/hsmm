@@ -14,8 +14,6 @@ class SemiMarkovModule(torch.nn.Module):
         parser.add_argument('--sm_supervised_state_smoothing', type=float, default=1e-2)
         parser.add_argument('--sm_supervised_length_smoothing', type=float, default=1e-1)
         parser.add_argument('--sm_supervised_cov_smoothing', type=float, default=0.)
-        parser.add_argument('--sm_feature_projection', action='store_true')
-        parser.add_argument('--sm_init_non_projection_parameters_from')
 
     def __init__(self, args, n_classes, n_dims):
         super(SemiMarkovModule, self).__init__()
@@ -27,7 +25,6 @@ class SemiMarkovModule(torch.nn.Module):
         self.allow_self_transitions = args.sm_allow_self_transitions
         self.learning_rate = args.sm_lr
         self.init_params()
-        self.init_projector()
 
     def init_params(self):
         """Create torch differentiable params"""
@@ -47,12 +44,6 @@ class SemiMarkovModule(torch.nn.Module):
         self.init_logits = torch.nn.Parameter(init_logits, requires_grad=True)
         torch.nn.init.uniform_(self.init_logits, 0, 1)
 
-    def init_projector(self):
-        if self.args.sm_feature_projection:
-            self.feature_projector = Projector(self.args, input_size=self.feature_dim)
-        else:
-            self.feature_projector = None
-
     def initialize_gaussian(self, data, lengths):
         b, _, d = data.size()
         assert lengths.size(0) == b
@@ -60,8 +51,6 @@ class SemiMarkovModule(torch.nn.Module):
         for i in range(b):
             feats.append(data[i, :lengths[i]])
         feats = torch.cat(feats, dim=0)
-        if self.feature_projector:
-            feats = self.feature_projector(feats)
         assert d == self.feature_dim
         mean = feats.mean(dim=0, keepdim=True)
         self.gaussian_means.data.zero_()
@@ -104,9 +93,6 @@ class SemiMarkovModule(torch.nn.Module):
             self.gaussian_cov.data.add_(torch.full(self.gaussian_cov.size(), self.args.sm_supervised_cov_smoothing).to(device=self.gaussian_cov.device, dtype=torch.float))
 
     def fit_supervised(self, feature_list, label_list, length_list):
-        if self.feature_projector is not None:
-            raise NotImplementedError('fit_supervised with feature projector')
-
         emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, length_list, covariance_type='diag', n_classes=self.n_classes, max_k=self.max_k)
 
         init_probs = (stats['span_start_counts'] + self.args.sm_supervised_state_smoothing) /\
@@ -277,14 +263,9 @@ class SemiMarkovModule(torch.nn.Module):
     def score_features(self, features, lengths, valid_classes, add_eos):
         self.kl = torch.autograd.Variable(torch.zeros(features.size(0)).to(features.device), requires_grad=True)
 
-        if self.feature_projector is not None:
-            projected_features = self.feature_projector(features)
-        else:
-            projected_features = features
-
         scores = self.log_hsmm(
             self.transition_log_probs(valid_classes),
-            self.emission_log_probs(projected_features, valid_classes),
+            self.emission_log_probs(features, valid_classes),
             self.initial_log_probs(valid_classes),
             self.length_log_probs(valid_classes),
             lengths,
