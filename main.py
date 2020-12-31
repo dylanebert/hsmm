@@ -36,6 +36,7 @@ class SemiMarkovDataset(torch.utils.data.Dataset):
             lengths[i] = feat.shape[0]
             labels[i, :feat.shape[0]] = dset.labels[type][session]
             steps[i, :feat.shape[0]] = steps_
+        print(features.shape)
 
         device = torch.device('cuda')
         self.features = torch.FloatTensor(features).to(device)
@@ -82,15 +83,16 @@ def train_unsupervised(args, train_dset, dev_dset, n_classes):
     model.initialize_gaussian(train_dset.features, train_dset.lengths)
     optimizer = torch.optim.Adam(model.parameters(), model.learning_rate)
 
-    features = []
-    lengths = []
-    labels = []
-    for i in range(len(train_dset)):
-        sample = train_dset[i]
-        features.append(sample['features'])
-        lengths.append(sample['lengths'])
-        labels.append(sample['labels'])
-    model.initialize_supervised(features, labels, lengths, overrides=['cov'])
+    if len(args.overrides) > 0:
+        features = []
+        lengths = []
+        labels = []
+        for i in range(len(train_dset)):
+            sample = train_dset[i]
+            features.append(sample['features'])
+            lengths.append(sample['lengths'])
+            labels.append(sample['labels'])
+        model.initialize_supervised(features, labels, lengths, overrides=args.overrides, freeze=True)
 
     model.train()
     best_loss = 1e9
@@ -175,10 +177,12 @@ def eval(gold, pred):
 
 def debug(model, dev_dset, epoch):
     features = dev_dset[0]['features'].unsqueeze(0)
+    labels = dev_dset[0]['labels'].unsqueeze(0)
     lengths = dev_dset[0]['lengths'].unsqueeze(0)
 
     params = {
         'features': features.cpu().numpy(),
+        'labels': labels.cpu().numpy(),
         'trans': np.exp(model.transition_log_probs(None).detach().cpu().numpy()),
         'emission': np.exp(model.emission_log_probs(features, None).detach().cpu().numpy()),
         'initial': np.exp(model.initial_log_probs(None).detach().cpu().numpy()),
@@ -188,7 +192,7 @@ def debug(model, dev_dset, epoch):
     }
 
     np.set_printoptions(suppress=True)
-    for param in ['mean', 'trans', 'lengths']:
+    for param in ['features', 'labels', 'mean', 'cov', 'trans', 'lengths']:
         print('{}\n{}\n'.format(param, params[param]))
 
 def viz(gold, pred):
@@ -222,25 +226,31 @@ if __name__ == '__main__':
     parser.add_argument('--supervised', action='store_true')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--max_k', help='maximum length of one state', type=int, default=5)
+    parser.add_argument('--overrides', nargs='+', choices=['mean', 'cov', 'init', 'trans', 'lengths'])
     args = parser.parse_args([
-        '--subsample', '45',
-        '--trim',
+        '--subsample', '18',
+        '--trim', '5',
         '--train_sequencing', 'session',
         '--dev_sequencing', 'session',
         '--test_sequencing', 'session',
-        '--label_method', 'actions',
+        '--label_method', 'actions_rhand_apple',
         '--debug',
         '--features',
-            'speed:most_moving_obj',
-            'relVelZ:most_moving_hand',
-            'relVelX:most_moving_hand',
-            'velY:most_moving_hand',
-        #'--sm_allow_self_transitions',
-        '--supervised'
+            'moving:Apple',
+            'relVelZ:RightHand',
+            'relVelX:RightHand',
+            'velY:RightHand',
+        '--overrides',
+            'mean',
+            'cov',
+        '--sm_allow_self_transitions',
+        #'--preprocess',
+        #'--supervised',
+        #'--recache'
     ])
 
     dset = NBC(args)
-    n_classes = dset.n_classes
+    n_classes = 5
     train_dset = SemiMarkovDataset(args, dset, type='train')
     dev_dset = SemiMarkovDataset(args, dset, type='dev')
 
