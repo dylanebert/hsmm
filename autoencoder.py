@@ -1,221 +1,166 @@
 import numpy as np
-import pandas as pd
 import tensorflow as tf
-import numpy as np
-import argparse
 import sys
 sys.path.append('C:/Users/dylan/Documents/')
-from nbc.nbc import NBC
-import uuid
-import json
-import os
-import matplotlib.pyplot as plt
-from scipy import stats
+from nbc.nbc_wrapper import NBCWrapper
+import argparse
 import random
+import scipy
+import sklearn
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-random.seed(0)
-tf.random.set_seed(0)
+class Sampling(tf.keras.layers.Layer):
+    def call(self, inputs):
+        z_mean, z_log_var = inputs
+        batch = tf.shape(z_mean)[0]
+        dim = tf.shape(z_mean)[1]
+        epsilon = tf.random.normal(shape=(batch, dim))
+        return z_mean + tf.math.exp(.5 * z_log_var) * epsilon
 
-class Autoencoder(tf.keras.models.Model):
-    def __init__(self, seq_len, input_dim, hidden_dim):
-        super(Autoencoder, self).__init__()
-        self.seq_len = seq_len
-        self.input_dim = input_dim
+class VAE(tf.keras.models.Model):
+    def __init__(self, seq_len, input_dim, hidden_dim, beta=10):
+        super(VAE, self).__init__()
         self.hidden_dim = hidden_dim
+        self.beta = beta
         self.encoder = tf.keras.models.Sequential([
             tf.keras.layers.Input(shape=(seq_len, input_dim)),
-            tf.keras.layers.Conv1D(8, 3, activation='relu', padding='same'),
-            tf.keras.layers.MaxPooling1D(2),
-            tf.keras.layers.Conv1D(4, 3, activation='relu', padding='same'),
-            tf.keras.layers.MaxPooling1D(2),
-            tf.keras.layers.Flatten(),
-            tf.keras.layers.Dense(hidden_dim)
+            tf.keras.layers.Masking(mask_value=-1e9),
+            tf.keras.layers.LSTM(hidden_dim),
+            tf.keras.layers.Dropout(.5),
+            tf.keras.layers.Dense(hidden_dim * 2)
         ])
         self.decoder = tf.keras.models.Sequential([
-            tf.keras.layers.Dense(seq_len),
-            tf.keras.layers.Reshape((seq_len // 4, 4)),
-            tf.keras.layers.Conv1DTranspose(4, 3, activation='relu', padding='same'),
-            tf.keras.layers.UpSampling1D(2),
-            tf.keras.layers.Conv1DTranspose(8, 3, activation='relu', padding='same'),
-            tf.keras.layers.UpSampling1D(2),
-            tf.keras.layers.Conv1DTranspose(input_dim, 3, padding='same')
+            tf.keras.layers.Input(shape=(hidden_dim,)),
+            tf.keras.layers.RepeatVector(seq_len),
+            tf.keras.layers.LSTM(hidden_dim, return_sequences=True),
+            tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(input_dim))
         ])
+        self.train_loss = tf.keras.metrics.Mean(name='train_loss')
+        self.reconstr_loss_train = tf.keras.metrics.Mean(name='reconstr_loss_train')
+        self.kl_loss_train = tf.keras.metrics.Mean(name='kl_loss_train')
+        self.dev_loss = tf.keras.metrics.Mean(name='dev_loss')
 
     def call(self, x):
-        z = self.encoder(x)
-        y = self.decoder(z)
-        return y
+        z_mean, z_log_var = self.encode(x)
+        z = self.reparameterize(z_mean, z_log_var)
+        return self.decoder(z)
 
-def cache(args, id):
-    args_dict = json.dumps(vars(args))
-    key_path = 'models/keys.json'
-    if os.path.exists(key_path):
-        with open(key_path) as f:
-            keys = json.load(f)
-    else:
-        keys = {}
-    keys[args_dict] = id
-    with open(key_path, 'w+') as f:
-        json.dump(keys, f)
-    print('cached model')
+    def encode(self, x):
+        z_mean, z_log_var = tf.split(self.encoder(x), num_or_size_splits=2, axis=1)
+        return z_mean, z_log_var
 
-def try_load_cached(args):
-    args_dict = json.dumps(vars(args))
-    key_path = 'models/keys.json'
-    if not os.path.exists(key_path):
-        return False
-    with open(key_path) as f:
-        keys = json.load(f)
-    if args_dict not in keys:
-        return False
-    fpath = 'models/{}.h5'.format(keys[args_dict])
-    if os.path.exists(fpath):
-        return fpath
-    else:
-        del keys[args_dict]
-        with open(key_path, 'w+') as f:
-            json.dump(keys, f)
-        return False
+    def reparameterize(self, z_mean, z_log_var):
+        batch = tf.shape(z_mean)[0]
+        dim = tf.shape(z_mean)[1]
+        eps = tf.random.normal(shape=(batch, dim))
+        return eps * tf.exp(z_log_var * .5) + z_mean
 
-def get_autoencoder(args, x):
+    @tf.function
+    def train_step(self, x):
+        with tf.GradientTape() as tape:
+            z_mean, z_log_var = self.encode(x)
+            z = self.reparameterize(z_mean, z_log_var)
+            x_reconstr = self.decoder(z)
+            x_masked = tf.boolean_mask(x, tf.not_equal(x, -1e9))
+            x_reconstr_masked = tf.boolean_mask(x_reconstr, tf.not_equal(x, -1e9))
+            reconstr_loss = tf.math.reduce_mean(tf.keras.losses.binary_crossentropy(x_masked, x_reconstr_masked))
+            kl_loss = -.5 * (1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var))
+            kl_loss = tf.math.reduce_mean(tf.math.reduce_sum(kl_loss, axis=1))
+            total_loss = reconstr_loss + self.beta * kl_loss
+        gradients = tape.gradient(total_loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        self.train_loss(total_loss)
+        self.reconstr_loss_train(reconstr_loss)
+        self.kl_loss_train(kl_loss)
+        return {
+            'loss': self.train_loss.result(),
+            'reconstr_loss': self.reconstr_loss_train.result(),
+            'kl_loss': self.kl_loss_train.result()
+        }
+
+    @tf.function
+    def test_step(self, x):
+        z_mean, z_log_var = self.encode(x)
+        x_reconstr = self.decoder(z_mean)
+        x_masked = tf.boolean_mask(x, tf.not_equal(x, -1e9))
+        x_reconstr_masked = tf.boolean_mask(x_reconstr, tf.not_equal(x, -1e9))
+        reconstr_loss = tf.math.reduce_mean(tf.keras.losses.binary_crossentropy(x_masked, x_reconstr_masked))
+        kl_loss = -.5 * (1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var))
+        kl_loss = tf.math.reduce_mean(tf.math.reduce_sum(kl_loss, axis=1))
+        total_loss = reconstr_loss + self.beta * kl_loss
+        self.dev_loss(total_loss)
+        return {
+            'loss': self.dev_loss.result(),
+        }
+
+def train_autoencoder(x, hidden_dim):
     batch_size = 10
     _, seq_len, input_dim = x['train'].shape
-    hidden_dim = args.hidden_size
 
-    train_dset = tf.data.Dataset.from_tensor_slices((x['train'], x['train'])).batch(batch_size, drop_remainder=True)
-    dev_dset = tf.data.Dataset.from_tensor_slices((x['dev'], x['dev'])).batch(batch_size, drop_remainder=True)
+    train_dset = tf.data.Dataset.from_tensor_slices(x['train']).batch(batch_size)
+    dev_dset = tf.data.Dataset.from_tensor_slices(x['dev']).batch(batch_size)
 
-    model = Autoencoder(seq_len, input_dim, hidden_dim)
-    model.compile(optimizer='adam', loss='mean_squared_error')
-    model.build(input_shape=(batch_size, seq_len, input_dim))
-    model.encoder.summary()
-    model.decoder.summary()
+    vae = VAE(seq_len, input_dim, hidden_dim, beta=10)
+    vae.compile(optimizer='adam')
+    callbacks = [
+        tf.keras.callbacks.EarlyStopping(patience=10, min_delta=1e-3, verbose=1),
+        tf.keras.callbacks.ModelCheckpoint('models/tmp.h5', save_best_only=True, verbose=1)
+    ]
+    #vae.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
+    vae(x['train'])
+    vae.load_weights('models/tmp.h5')
+    return vae
 
-    fpath = try_load_cached(args)
-    if fpath:
-        model.load_weights(fpath)
-    else:
-        id = str(uuid.uuid1())
-        callbacks = [
-            tf.keras.callbacks.EarlyStopping(patience=10, verbose=1, min_delta=1e-4),
-            tf.keras.callbacks.ModelCheckpoint('models/{}.h5'.format(id), save_best_only=True, verbose=1),
-            tf.keras.callbacks.TensorBoard(log_dir='logs/')
-        ]
-        model.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks)
-        cache(args, id)
-
-    return model
-
-def classifier_test(args, model, x, y):
-    z = {}
-    for type in ['train', 'dev', 'test']:
-        z[type] = model.encoder(x[type])
+def classifier_eval(x, y, vae):
     batch_size = 10
-    num_classes = y['train'].max() + 1
-    print('num classes', num_classes)
-    classifiers = {
-        'original': tf.keras.models.Sequential([
-            tf.keras.layers.Input(shape=(model.seq_len, model.input_dim)),
-            tf.keras.layers.Flatten(),
-            tf.keras.layers.Dense(32, activation='relu'),
-            tf.keras.layers.Dense(16, activation='relu'),
-            tf.keras.layers.Dropout(.5),
-            tf.keras.layers.Dense(num_classes)
-        ]),
-        'encoded': tf.keras.models.Sequential([
-            tf.keras.layers.Input(shape=(model.hidden_dim)),
-            tf.keras.layers.Dense(32, activation='relu'),
-            tf.keras.layers.Dense(16, activation='relu'),
-            tf.keras.layers.Dropout(.5),
-            tf.keras.layers.Dense(num_classes)
-        ])
-    }
-    train_dset = {
-        'original': tf.data.Dataset.from_tensor_slices((x['train'], y['train'])).batch(batch_size, drop_remainder=True),
-        'encoded': tf.data.Dataset.from_tensor_slices((z['train'], y['train'])).batch(batch_size, drop_remainder=True)
-    }
-    dev_dset = {
-        'original': tf.data.Dataset.from_tensor_slices((x['dev'], y['dev'])).batch(batch_size, drop_remainder=True),
-        'encoded': tf.data.Dataset.from_tensor_slices((z['dev'], y['dev'])).batch(batch_size, drop_remainder=True)
-    }
-    for name, classifier in classifiers.items():
-        print(name)
-        classifier.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-        callbacks = [
-            tf.keras.callbacks.EarlyStopping(patience=5, verbose=0),
-            tf.keras.callbacks.ModelCheckpoint('models/tmp.h5', save_best_only=True, verbose=0)
-        ]
-        classifier.fit(x=train_dset[name], epochs=1000, shuffle=True, validation_data=dev_dset[name], callbacks=callbacks, verbose=0)
-        classifier.load_weights('models/tmp.h5')
-        classifier.evaluate(x=train_dset[name])
+    z = {'train': vae.encode(x['train'])[0], 'dev': vae.encode(x['dev'])[0]}
+    print(z['train'])
+    _, input_dim = z['train'].shape
+    n_classes = y['train'].max() + 1
 
-def summarize_dset(dset):
-    for type in ['train', 'dev', 'test']:
-        print(type)
-        print(pd.DataFrame({'y': dset[type]}).groupby('y').size())
+    train_dset = tf.data.Dataset.from_tensor_slices((z['train'], y['train'])).batch(batch_size)
+    dev_dset = tf.data.Dataset.from_tensor_slices((z['dev'], y['dev'])).batch(batch_size)
 
-def sliding_window_dset(nbc, chunk_size=12, stride=4, include_idle=False):
-    x = {}; y = {}
-    for type in ['train', 'dev', 'test']:
-        x_ = []; y_ = []
-        for key, seq in nbc.labels[type].items():
-            n = seq.shape[0]
-            k = 0
-            while k < n - chunk_size:
-                chunk = seq[k:k+chunk_size]
-                if (include_idle or chunk[0] > 1) and np.all(chunk == chunk[0]):
-                    label = int(chunk[0])
-                    feat = nbc.features[type][key][k:k+chunk_size]
-                    if include_idle:
-                        label -= 1
-                    else:
-                        label -= 2
-                    x_.append(feat)
-                    y_.append(label)
-                    k += stride
-                else:
-                    k += 1
-        x[type] = np.array(x_, dtype=np.float32)
-        y[type] = np.array(y_, dtype=int)
-    return x, y
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Input(shape=(input_dim,)),
+        tf.keras.layers.Dense(16, activation='relu'),
+        tf.keras.layers.Dense(n_classes, activation='softmax')
+    ])
+    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    callbacks = [
+        tf.keras.callbacks.EarlyStopping(patience=5, verbose=1),
+        tf.keras.callbacks.ModelCheckpoint('models/tmp.h5', save_best_only=True, verbose=1)
+    ]
+    model.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
+    model.load_weights('models/tmp.h5')
+    model.evaluate(x=dev_dset, verbose=1)
+
+def viz(x, vae):
+    z, _ = vae.encode(x['train'])
+    z_transform = TSNE().fit_transform(z)
+    mapping = {0: 'idle', 1: 'reach/put', 2: 'pick/retract'}
+    y_ = [mapping[elem] for elem in y['train']]
+    sns.scatterplot(z_transform[:,0], z_transform[:,1], hue=y_)
+    plt.show()
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--hidden_size', type=int, required=True)
-    NBC.add_args(parser)
-    '''args = parser.parse_args([
-        '--subsample', '5',
-        '--train_sequencing', 'session',
-        '--dev_sequencing', 'session',
-        '--test_sequencing', 'session',
-        '--label_method', 'actions',
-        '--features',
-            'relPosX:hands',
-            'posY:hands',
-            'relPosZ:hands',
-            'dist_to_rhand:objs',
-            'speed:objs',
-        '--preprocess',
-        '--hidden_size', '10'
-    ])'''
-    args = parser.parse_args([
-        '--subsample', '5',
-        '--train_sequencing', 'session',
-        '--dev_sequencing', 'session',
-        '--test_sequencing', 'session',
-        '--label_method', 'actions_rhand_apple',
-        '--features',
-            'relPosX:RightHand',
-            'posY:RightHand',
-            'relPosZ:RightHand',
-            'dist_to_rhand:Apple',
-            'speed:Apple',
-        '--preprocess',
-        '--hidden_size', '10'
-    ])
+    class Args:
+        def __init__(self):
+            self.subsample = 9
+            self.dynamic_only = True
+            self.train_sequencing = 'actions'
+            self.dev_sequencing = 'actions'
+            self.test_sequencing = 'actions'
+            self.label_method = 'hand_motion_rhand'
+            self.features = ['velY:RightHand', 'relVelZ:RightHand']
 
-    nbc = NBC(args)
-    x, y = sliding_window_dset(nbc)
-    summarize_dset(y)
-    model = get_autoencoder(args, x)
-    classifier_test(args, model, x, y)
+            self.output_type = 'classifier'
+            self.preprocessing = ['robust', 'min-max']
+    args = Args()
+    nbc_wrapper = NBCWrapper(args)
+    x, y = nbc_wrapper.x, nbc_wrapper.y
+    vae = train_autoencoder(x, 3)
+    viz(x, vae)
+    classifier_eval(x, y, vae)

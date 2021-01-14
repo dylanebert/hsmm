@@ -244,9 +244,8 @@ if __name__ == '__main__':
             'mean',
             'cov',
         '--sm_allow_self_transitions',
-        #'--preprocess',
-        #'--supervised',
-        #'--recache'
+        '--preprocess',
+        '--supervised',
     ])
 
     dset = NBC(args)
