@@ -10,6 +10,9 @@ import sklearn
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 import seaborn as sns
+import uuid
+import json
+import os
 
 class Sampling(tf.keras.layers.Layer):
     def call(self, inputs):
@@ -95,25 +98,7 @@ class VAE(tf.keras.models.Model):
             'loss': self.dev_loss.result(),
         }
 
-def train_autoencoder(x, hidden_dim):
-    batch_size = 10
-    _, seq_len, input_dim = x['train'].shape
-
-    train_dset = tf.data.Dataset.from_tensor_slices(x['train']).batch(batch_size)
-    dev_dset = tf.data.Dataset.from_tensor_slices(x['dev']).batch(batch_size)
-
-    vae = VAE(seq_len, input_dim, hidden_dim, beta=10)
-    vae.compile(optimizer='adam')
-    callbacks = [
-        tf.keras.callbacks.EarlyStopping(patience=10, min_delta=1e-3, verbose=1),
-        tf.keras.callbacks.ModelCheckpoint('models/tmp.h5', save_best_only=True, verbose=1)
-    ]
-    #vae.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
-    vae(x['train'])
-    vae.load_weights('models/tmp.h5')
-    return vae
-
-def classifier_eval(x, y, vae):
+'''def classifier_eval(x, y, vae):
     batch_size = 10
     z = {'train': vae.encode(x['train'])[0], 'dev': vae.encode(x['dev'])[0]}
     print(z['train'])
@@ -133,34 +118,106 @@ def classifier_eval(x, y, vae):
         tf.keras.callbacks.EarlyStopping(patience=5, verbose=1),
         tf.keras.callbacks.ModelCheckpoint('models/tmp.h5', save_best_only=True, verbose=1)
     ]
-    model.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
+    model.fit(x=train_dset, epochs=100, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
     model.load_weights('models/tmp.h5')
     model.evaluate(x=dev_dset, verbose=1)
 
 def viz(x, vae):
     z, _ = vae.encode(x['train'])
     z_transform = TSNE().fit_transform(z)
-    mapping = {0: 'idle', 1: 'reach/put', 2: 'pick/retract'}
-    y_ = [mapping[elem] for elem in y['train']]
-    sns.scatterplot(z_transform[:,0], z_transform[:,1], hue=y_)
-    plt.show()
+    sns.scatterplot(z_transform[:,0], z_transform[:,1], hue=y['train'])
+    plt.show()'''
+
+class AutoencoderWrapper:
+    @classmethod
+    def add_args(cls, parser):
+        parser.add_argument('--vae_hidden_size', type=int, default=8)
+        parser.add_argument('--vae_batch_size', type=int, default=10)
+        parser.add_argument('--vae_beta', type=int, default=10)
+
+    def __init__(self, args):
+        self.args = args
+        self.nbc_wrapper = NBCWrapper(args)
+        self.x, self.y = self.nbc_wrapper.x, self.nbc_wrapper.y
+        self.get_autoencoder()
+
+    def args_to_id(self):
+        args_dict = {'nbc_id': self.nbc_wrapper.nbc.args_to_id()}
+        for k in ['vae_hidden_size', 'vae_batch_size', 'vae_beta', 'nbc_output_type', 'nbc_preprocessing']:
+            assert k in vars(self.args), k
+            args_dict[k] = vars(self.args)[k]
+        return json.dumps(args_dict)
+
+    def try_load_weights(self):
+        args_id = self.args_to_id()
+        keypath = 'models/autoencoder/keys.json'
+        if not os.path.exists(keypath):
+            return False
+        with open(keypath) as f:
+            keys = json.load(f)
+        if args_id not in keys:
+            return False
+        fid = keys[args_id]
+        weights_path = 'models/autoencoder/{}.h5'.format(fid)
+        self.vae(self.x['train'])
+        self.vae.load_weights(weights_path)
+        return True
+
+    def save_weights(self):
+        args_id = self.args_to_id()
+        keypath = 'models/autoencoder/keys.json'
+        if os.path.exists(keypath):
+            with open(keypath) as f:
+                keys = json.load(f)
+        else:
+            keys = {}
+        fid = str(uuid.uuid1())
+        weights_path = 'models/autoencoder/{}.h5'.format(fid)
+        self.vae.save_weights(weights_path)
+        keys[args_id] = fid
+        with open(keypath, 'w+') as f:
+            json.dump(keys, f)
+        print('saved autoencoder')
+
+    def train_autoencoder(self):
+        _, seq_len, input_dim = self.x['train'].shape
+        train_dset = tf.data.Dataset.from_tensor_slices(self.x['train']).batch(self.args.vae_batch_size)
+        dev_dset = tf.data.Dataset.from_tensor_slices(self.x['dev']).batch(self.args.vae_batch_size)
+
+        self.vae.compile(optimizer='adam')
+        callbacks = [
+            tf.keras.callbacks.EarlyStopping(patience=10, min_delta=1e-3, verbose=1),
+            tf.keras.callbacks.ModelCheckpoint('models/tmp.h5', save_best_only=True, verbose=1)
+        ]
+        self.vae.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
+        self.vae(self.x['train'])
+        self.vae.load_weights('models/tmp.h5')
+
+    def get_autoencoder(self):
+        _, seq_len, input_dim = self.x['train'].shape
+        self.vae = VAE(seq_len, input_dim, self.args.vae_hidden_size, beta=self.args.vae_beta)
+        if self.try_load_weights():
+            print('loaded saved weights')
+            return
+        self.train_autoencoder()
+        self.save_weights()
 
 if __name__ == '__main__':
     class Args:
         def __init__(self):
-            self.subsample = 9
-            self.dynamic_only = True
-            self.train_sequencing = 'actions'
-            self.dev_sequencing = 'actions'
-            self.test_sequencing = 'actions'
-            self.label_method = 'hand_motion_rhand'
-            self.features = ['velY:RightHand', 'relVelZ:RightHand']
+            self.nbc_subsample = 9
+            self.nbc_dynamic_only = True
+            self.nbc_train_sequencing = 'actions'
+            self.nbc_dev_sequencing = 'actions'
+            self.nbc_test_sequencing = 'actions'
+            self.nbc_label_method = 'hand_motion_rhand'
+            self.nbc_features = ['velY:RightHand', 'relVelZ:RightHand']
 
-            self.output_type = 'classifier'
-            self.preprocessing = ['robust', 'min-max']
+            self.nbc_output_type = 'classifier'
+            self.nbc_preprocessing = ['robust', 'min-max']
+
+            self.vae_hidden_size = 8
+            self.vae_batch_size = 10
+            self.vae_beta = 10
     args = Args()
-    nbc_wrapper = NBCWrapper(args)
-    x, y = nbc_wrapper.x, nbc_wrapper.y
-    vae = train_autoencoder(x, 3)
-    viz(x, vae)
-    classifier_eval(x, y, vae)
+    vae_wrapper = AutoencoderWrapper(args)
