@@ -1,0 +1,22 @@
+{
+  "name": "interface",
+  "version": "0.1.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [],
+  "author": "Dylan Ebert",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^11.2.0"
+  },
+  "dependencies": {
+    "bootstrap": "^4.6.0",
+    "chart.js": "^2.9.4",
+    "jquery": "^3.5.1",
+    "popper.js": "^1.16.1",
+    "python-shell": "^2.0.3"
+  }
+}

@@ -13,6 +13,9 @@ import seaborn as sns
 import uuid
 import json
 import os
+import controller
+
+HSMM_ROOT = 'C:/Users/dylan/Documents/seg/hsmm/'
 
 class Sampling(tf.keras.layers.Layer):
     def call(self, inputs):
@@ -150,7 +153,7 @@ class AutoencoderWrapper:
 
     def try_load_weights(self):
         args_id = self.args_to_id()
-        keypath = 'models/autoencoder/keys.json'
+        keypath = HSMM_ROOT + 'models/autoencoder/keys.json'
         if not os.path.exists(keypath):
             return False
         with open(keypath) as f:
@@ -158,21 +161,21 @@ class AutoencoderWrapper:
         if args_id not in keys:
             return False
         fid = keys[args_id]
-        weights_path = 'models/autoencoder/{}.h5'.format(fid)
+        weights_path = HSMM_ROOT + 'models/autoencoder/{}.h5'.format(fid)
         self.vae(self.x['train'])
         self.vae.load_weights(weights_path)
         return True
 
     def save_weights(self):
         args_id = self.args_to_id()
-        keypath = 'models/autoencoder/keys.json'
+        keypath = HSMM_ROOT + 'models/autoencoder/keys.json'
         if os.path.exists(keypath):
             with open(keypath) as f:
                 keys = json.load(f)
         else:
             keys = {}
         fid = str(uuid.uuid1())
-        weights_path = 'models/autoencoder/{}.h5'.format(fid)
+        weights_path = HSMM_ROOT + 'models/autoencoder/{}.h5'.format(fid)
         self.vae.save_weights(weights_path)
         keys[args_id] = fid
         with open(keypath, 'w+') as f:
@@ -187,11 +190,11 @@ class AutoencoderWrapper:
         self.vae.compile(optimizer='adam')
         callbacks = [
             tf.keras.callbacks.EarlyStopping(patience=10, min_delta=1e-3, verbose=1),
-            tf.keras.callbacks.ModelCheckpoint('models/tmp.h5', save_best_only=True, verbose=1)
+            tf.keras.callbacks.ModelCheckpoint(HSMM_ROOT + 'models/tmp.h5', save_best_only=True, verbose=1)
         ]
         self.vae.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
         self.vae(self.x['train'])
-        self.vae.load_weights('models/tmp.h5')
+        self.vae.load_weights(HSMM_ROOT + 'models/tmp.h5')
 
     def get_autoencoder(self):
         _, seq_len, input_dim = self.x['train'].shape
@@ -202,22 +205,14 @@ class AutoencoderWrapper:
         self.train_autoencoder()
         self.save_weights()
 
+    def get_encodings(self, type='train', apply_tsne=True):
+        x, y = self.x[type], self.y[type]
+        z, _ = self.vae.encode(x)
+        if apply_tsne:
+            z = TSNE().fit_transform(z)
+        return z, y
+
 if __name__ == '__main__':
-    class Args:
-        def __init__(self):
-            self.nbc_subsample = 9
-            self.nbc_dynamic_only = True
-            self.nbc_train_sequencing = 'actions'
-            self.nbc_dev_sequencing = 'actions'
-            self.nbc_test_sequencing = 'actions'
-            self.nbc_label_method = 'hand_motion_rhand'
-            self.nbc_features = ['velY:RightHand', 'relVelZ:RightHand']
-
-            self.nbc_output_type = 'classifier'
-            self.nbc_preprocessing = ['robust', 'min-max']
-
-            self.vae_hidden_size = 8
-            self.vae_batch_size = 10
-            self.vae_beta = 10
-    args = Args()
+    args = controller.deserialize('test')
     vae_wrapper = AutoencoderWrapper(args)
+    print(vae_wrapper.get_encodings()[0].shape)
