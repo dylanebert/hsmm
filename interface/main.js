@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron')
 const fs = require('fs')
 const path = require('path')
 const { PythonShell } = require('python-shell')
+app.commandLine.appendSwitch('ignore-certificate-errors', 'true')
 
 /*let options = {
     mode: 'text',

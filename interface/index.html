@@ -8,10 +8,18 @@
     <div class="container-fluid">
         <div class="row">
             <div class="col-sm-6" id="left">
-                <p id="left-header"></p>
-                <canvas id="train-encodings-viz"></canvas>
+
             </div>
             <div class="col-sm-6" id="right">
+            </div>
+        </div>
+        <div class="row py-5"></div>
+        <div class="row">
+            <div class="col-sm-6" id="bottom-left">
+
+            </div>
+            <div class="col-sm-6" id="bottom-right">
+
             </div>
         </div>
     </div>
@@ -38,12 +46,12 @@ function updateArgs(fpath) {
 }
 
 function updateChart() {
-    $('#left-header').text('Loading encodings...')
+    $('#left').html(`<p>Loading encodings...</p>`)
     $.get('http://localhost:5000/get_encodings', function(res) {
-        $('#left-header').text('Loaded encodings')
+        $('#left').html(`<canvas id="train-encodings-viz"></canvas>`)
         var encodings = $.parseJSON(res)
         var ctx = $('#train-encodings-viz')
-        var myChart = new Chart(ctx, {
+        var encodingChart = new Chart(ctx, {
             type: 'scatter',
             data: {
                 datasets: encodings
@@ -64,19 +72,41 @@ function updateChart() {
             }
         })
         ctx.click(function(e) {
-            var dsetIndices = myChart.getDatasetAtEvent(e)
-            var activePoints = myChart.getElementsAtEvent(e)
+            var dsetIndices = encodingChart.getDatasetAtEvent(e)
+            var activePoints = encodingChart.getElementsAtEvent(e)
             if(activePoints.length > 0) {
                 var idx = activePoints[0]._index
                 var dset_idx = dsetIndices[idx]._datasetIndex
-                var elem = myChart.data.datasets[dset_idx].data[idx]
-                console.log(elem)
+                var elem = encodingChart.data.datasets[dset_idx].data[idx]
+                $('#bottom-left').html(`
+                    <h4 id="bottom-left-header">Loading reconstruction...</h4>
+                    <canvas id="reconstruction-viz"></canvas>
+                `)
+                $.get('http://localhost:5000/get_elem_by_idx?idx=' + elem.idx, function(res) {
+                    var data = $.parseJSON(res)
+                    $('#bottom-left-header').text('Session: ' + data.session + ', Start: ' + data.start_step + ', End: ' + data.end_step)
+                    console.log(data)
+                    var reconstrCtx = $('#reconstruction-viz')
+                    var reconstrChart = new Chart(reconstrCtx, {
+                        type: 'line',
+                        data: data.data
+                    })
+                    $('#bottom-right').html(`
+                        <video style="max-width: 100%; height: auto;" controls>
+                            <source src="http://plunarlabcit.services.brown.edu/videos/` + data.session + `.mp4" type="video/mp4">
+                        </video>
+                    `)
+                })
             }
         })
     })
 }
 
 ipc.on('loadConfig', (e, fpath) => {
+    $('#right').html('')
+    $('#left').html('')
+    $('#bottom-left').html('')
+    $('#bottom-right').html('')
     $.get('http://localhost:5000/load_config?fpath=' + fpath, function(res) {
         if(res == 'success') {
             updateArgs(fpath)

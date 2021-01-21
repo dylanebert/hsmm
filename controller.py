@@ -2,6 +2,8 @@ import json
 import argparse
 from autoencoder import AutoencoderWrapper
 
+autoencoder_wrapper = None
+
 class Args:
     def __init__(self):
         self.nbc_subsample = 9
@@ -13,9 +15,9 @@ class Args:
         self.nbc_features = ['velY:RightHand', 'relVelZ:RightHand']
 
         self.nbc_output_type = 'classifier'
-        self.nbc_preprocessing = ['robust', 'min-max']
+        self.nbc_preprocessing = []#['robust', 'min-max']
 
-        self.vae_hidden_size = 8
+        self.vae_hidden_size = 16
         self.vae_batch_size = 10
         self.vae_beta = 10
 
@@ -50,9 +52,16 @@ def deserialize(fname):
     return args
 
 def get_encodings(args, type='train'):
+    global autoencoder_wrapper
     autoencoder_wrapper = AutoencoderWrapper(args)
-    z, y = autoencoder_wrapper.get_encodings(type=type)
-    return z, y
+    z = autoencoder_wrapper.get_encodings(type=type)
+    return z
+
+def get_reconstruction(args, type='train'):
+    global autoencoder_wrapper
+    assert autoencoder_wrapper is not None
+    x, x_ = autoencoder_wrapper.get_reconstruction(type=type)
+    return x, x_
 
 if __name__ == '__main__':
     args = Args()

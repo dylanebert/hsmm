@@ -10,11 +10,8 @@
         "relVelZ:RightHand"
     ],
     "nbc_output_type": "classifier",
-    "nbc_preprocessing": [
-        "robust",
-        "min-max"
-    ],
-    "vae_hidden_size": 8,
+    "nbc_preprocessing": [],
+    "vae_hidden_size": 16,
     "vae_batch_size": 10,
     "vae_beta": 10
 }

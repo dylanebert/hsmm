@@ -13,7 +13,6 @@ import seaborn as sns
 import uuid
 import json
 import os
-import controller
 
 HSMM_ROOT = 'C:/Users/dylan/Documents/seg/hsmm/'
 
@@ -71,7 +70,7 @@ class VAE(tf.keras.models.Model):
             x_reconstr = self.decoder(z)
             x_masked = tf.boolean_mask(x, tf.not_equal(x, -1e9))
             x_reconstr_masked = tf.boolean_mask(x_reconstr, tf.not_equal(x, -1e9))
-            reconstr_loss = tf.math.reduce_mean(tf.keras.losses.binary_crossentropy(x_masked, x_reconstr_masked))
+            reconstr_loss = tf.math.reduce_mean(tf.keras.losses.mse(x_masked, x_reconstr_masked))
             kl_loss = -.5 * (1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var))
             kl_loss = tf.math.reduce_mean(tf.math.reduce_sum(kl_loss, axis=1))
             total_loss = reconstr_loss + self.beta * kl_loss
@@ -92,7 +91,7 @@ class VAE(tf.keras.models.Model):
         x_reconstr = self.decoder(z_mean)
         x_masked = tf.boolean_mask(x, tf.not_equal(x, -1e9))
         x_reconstr_masked = tf.boolean_mask(x_reconstr, tf.not_equal(x, -1e9))
-        reconstr_loss = tf.math.reduce_mean(tf.keras.losses.binary_crossentropy(x_masked, x_reconstr_masked))
+        reconstr_loss = tf.math.reduce_mean(tf.keras.losses.mse(x_masked, x_reconstr_masked))
         kl_loss = -.5 * (1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var))
         kl_loss = tf.math.reduce_mean(tf.math.reduce_sum(kl_loss, axis=1))
         total_loss = reconstr_loss + self.beta * kl_loss
@@ -206,13 +205,36 @@ class AutoencoderWrapper:
         self.save_weights()
 
     def get_encodings(self, type='train', apply_tsne=True):
-        x, y = self.x[type], self.y[type]
+        x = self.x[type]
         z, _ = self.vae.encode(x)
         if apply_tsne:
-            z = TSNE().fit_transform(z)
-        return z, y
+            z = TSNE(random_state=0).fit_transform(z)
+        return z
+
+    def get_reconstruction(self, type='train'):
+        x = self.x[type]
+        x_ = self.vae(x).numpy()
+        return x, x_
 
 if __name__ == '__main__':
-    args = controller.deserialize('test')
+    class Args:
+        def __init__(self):
+            self.nbc_subsample = 9
+            self.nbc_dynamic_only = True
+            self.nbc_train_sequencing = 'actions'
+            self.nbc_dev_sequencing = 'actions'
+            self.nbc_test_sequencing = 'actions'
+            self.nbc_label_method = 'hand_motion_rhand'
+            self.nbc_features = ['velY:RightHand', 'relVelZ:RightHand']
+
+            self.nbc_output_type = 'classifier'
+            self.nbc_preprocessing = []
+
+            self.vae_hidden_size = 16
+            self.vae_batch_size = 10
+            self.vae_beta = 10
+    args = Args()
     vae_wrapper = AutoencoderWrapper(args)
     print(vae_wrapper.get_encodings()[0].shape)
+    x, x_ = vae_wrapper.get_reconstruction()
+    print(x.shape, x_.shape)
