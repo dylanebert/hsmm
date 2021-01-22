@@ -1,25 +1,13 @@
 import json
 import argparse
 from autoencoder import AutoencoderWrapper
+import numpy as np
 
 autoencoder_wrapper = None
 
 class Args:
     def __init__(self):
-        self.nbc_subsample = 9
-        self.nbc_dynamic_only = True
-        self.nbc_train_sequencing = 'actions'
-        self.nbc_dev_sequencing = 'actions'
-        self.nbc_test_sequencing = 'actions'
-        self.nbc_label_method = 'hand_motion_rhand'
-        self.nbc_features = ['velY:RightHand', 'relVelZ:RightHand']
-
-        self.nbc_output_type = 'classifier'
-        self.nbc_preprocessing = []#['robust', 'min-max']
-
-        self.vae_hidden_size = 16
-        self.vae_batch_size = 10
-        self.vae_beta = 10
+        return
 
 def serialize(args, fname):
     if '/' in fname or '\\' in fname:
@@ -42,6 +30,7 @@ def deserialize(fname):
     args.nbc_train_sequencing = args_dict['nbc_train_sequencing']
     args.nbc_dev_sequencing = args_dict['nbc_dev_sequencing']
     args.nbc_test_sequencing = args_dict['nbc_test_sequencing']
+    args.nbc_chunk_size = args_dict['nbc_chunk_size']
     args.nbc_label_method = args_dict['nbc_label_method']
     args.nbc_features = args_dict['nbc_features']
     args.nbc_output_type = args_dict['nbc_output_type']
@@ -54,15 +43,43 @@ def deserialize(fname):
 def get_encodings(args, type='train'):
     global autoencoder_wrapper
     autoencoder_wrapper = AutoencoderWrapper(args)
-    z = autoencoder_wrapper.get_encodings(type=type)
+    z = autoencoder_wrapper.encodings[type]
     return z
 
 def get_reconstruction(args, type='train'):
     global autoencoder_wrapper
     assert autoencoder_wrapper is not None
-    x, x_ = autoencoder_wrapper.get_reconstruction(type=type)
+    x = autoencoder_wrapper.x[type]
+    x_ = autoencoder_wrapper.reconstructions[type]
     return x, x_
 
+def chunks_to_sessions(z, steps):
+    sessions = {}
+    for i, (key, steps_) in enumerate(steps):
+        session = key[0]
+        feat = z[i]
+        if session not in sessions:
+            sessions[session] = {'feat': [], 'steps': []}
+        sessions[session]['feat'].append(feat)
+        sessions[session]['steps'].append(steps_[0])
+    features, steps = [], []
+    for session in sessions.keys():
+        steps_ = np.array(sessions[session]['steps'], dtype=int)
+        feat = np.array(sessions[session]['feat'], dtype=np.float32)
+        features.append(feat)
+        steps.append(steps_)
+    return features, steps
+
+def get_hsmm_sequences(args):
+    autoencoder_wrapper = AutoencoderWrapper(args)
+    sequences = {}
+    for type in ['train', 'dev', 'test']:
+        z = autoencoder_wrapper.encodings[type]
+        steps = list(autoencoder_wrapper.nbc_wrapper.nbc.steps[type].items())
+        feat, steps = chunks_to_sessions(z, steps)
+        sequences[type] = (feat, steps)
+    return sequences
+
 if __name__ == '__main__':
-    args = Args()
-    serialize(args, 'test')
+    args = deserialize('vae8_nokl_actions')
+    get_hsmm_sequences(args)

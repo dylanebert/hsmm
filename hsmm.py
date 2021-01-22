@@ -22,6 +22,7 @@ class SemiMarkovModule(torch.nn.Module):
         self.input_feature_dim = n_dims
         self.feature_dim = n_dims
         self.max_k = args.max_k
+        print(self.max_k)
         self.allow_self_transitions = args.sm_allow_self_transitions
         self.learning_rate = args.sm_lr
         self.init_params()

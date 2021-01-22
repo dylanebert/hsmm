@@ -44,6 +44,9 @@ def get_encodings():
     pal = sns.color_palette('hls', len(labels)).as_hex()
     for i, label in enumerate(labels):
         data = []
+        print(label)
+        print(z)
+        print(y)
         indices = np.arange(0, z.shape[0])[y==label]
         steps = list(nbc_wrapper.nbc.steps['dev'].items())
         for j, elem in enumerate(z[y==label]):

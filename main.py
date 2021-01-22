@@ -7,8 +7,7 @@ from hsmm import SemiMarkovModule, optimal_map, spans_to_labels
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import sys
-sys.path.append('C:/Users/dylan/Documents/')
-from nbc.nbc import NBC
+import controller
 
 random.seed(a=0)
 torch.manual_seed(0)
@@ -17,32 +16,31 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 class SemiMarkovDataset(torch.utils.data.Dataset):
-    def __init__(self, args, dset, type='train'):
-        n = len(dset.features[type])
+    def __init__(self, features, steps):
+        n = len(features)
         max_seq_len = 0
-        for feat in dset.features[type].values():
-            if len(feat) > max_seq_len:
-                max_seq_len = len(feat)
-            d = feat.shape[-1]
+        d = features[0].shape[-1]
+        for feat in features:
+            if feat.shape[0] > max_seq_len:
+                max_seq_len = feat.shape[0]
 
-        features = np.zeros((n, max_seq_len, d))
-        lengths = np.zeros((n,))
-        labels = np.zeros((n, max_seq_len))
-        steps = np.zeros((n, max_seq_len))
-        for i, session in enumerate(dset.features[type].keys()):
-            feat = dset.features[type][session]
-            steps_ = dset.steps[type][session]
-            features[i, :feat.shape[0]] = dset.features[type][session]
-            lengths[i] = feat.shape[0]
-            labels[i, :feat.shape[0]] = dset.labels[type][session]
-            steps[i, :feat.shape[0]] = steps_
-        print(features.shape)
+        _features = np.zeros((n, max_seq_len, d))
+        _lengths = np.zeros((n,))
+        _labels = np.zeros((n, max_seq_len))
+        _steps = np.zeros((n, max_seq_len))
+        for i in range(n):
+            feat = features[i]
+            steps_ = steps[i]
+            _features[i, :feat.shape[0]] = feat
+            _lengths[i] = feat.shape[0]
+            _steps[i, :feat.shape[0]] = steps_
+        print(_features.shape)
 
         device = torch.device('cuda')
-        self.features = torch.FloatTensor(features).to(device)
-        self.lengths = torch.LongTensor(lengths).to(device)
-        self.labels = torch.LongTensor(labels).to(device)
-        self.steps = torch.LongTensor(steps).to(device)
+        self.features = torch.FloatTensor(_features).to(device)
+        self.lengths = torch.LongTensor(_lengths).to(device)
+        self.labels = torch.LongTensor(_labels).to(device)
+        self.steps = torch.LongTensor(_steps).to(device)
 
     def __len__(self):
         return self.features.size(0)
@@ -96,7 +94,7 @@ def train_unsupervised(args, train_dset, dev_dset, n_classes):
 
     model.train()
     best_loss = 1e9
-    best_model = type(model)(args, n_classes, n_dim).cuda()
+    best_model = SemiMarkovModule(args, n_classes, n_dim).cuda()
     k = 0; patience = 5
 
     def report_acc():
@@ -220,44 +218,34 @@ def viz(gold, pred):
     plt.show()
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    NBC.add_args(parser)
-    SemiMarkovModule.add_args(parser)
-    parser.add_argument('--supervised', action='store_true')
-    parser.add_argument('--debug', action='store_true')
-    parser.add_argument('--max_k', help='maximum length of one state', type=int, default=5)
-    parser.add_argument('--overrides', nargs='+', choices=['mean', 'cov', 'init', 'trans', 'lengths'])
-    args = parser.parse_args([
-        '--subsample', '18',
-        '--trim', '5',
-        '--train_sequencing', 'session',
-        '--dev_sequencing', 'session',
-        '--test_sequencing', 'session',
-        '--label_method', 'actions_rhand_apple',
-        '--debug',
-        '--features',
-            'moving:Apple',
-            'relVelZ:RightHand',
-            'relVelX:RightHand',
-            'velY:RightHand',
-        '--overrides',
-            'mean',
-            'cov',
-        '--sm_allow_self_transitions',
-        '--preprocess',
-        '--supervised',
-    ])
+    class HSMMArgs:
+        def __init__(self):
+            self.sm_allow_self_transitions = True
+            self.sm_lr = 1e-1
+            self.sm_supervised_state_smoothing = 1e-2
+            self.sm_supervised_length_smoothing = 1e-1
+            self.sm_supervised_cov_smoothing = 0.
+            self.supervised = False
+            self.max_k = 5
+            self.overrides = []
+            self.debug = True
+    hsmm_args = HSMMArgs()
+    data_args = controller.deserialize('vae8')
+    sequences = controller.get_hsmm_sequences(data_args)
+    from numba import cuda
+    device = cuda.get_current_device()
+    device.reset()
+    data = {}
+    for type in ['train', 'dev', 'test']:
+        feat, steps = sequences[type]
+        data[type] = SemiMarkovDataset(feat, steps)
+    n_classes = 3
 
-    dset = NBC(args)
-    n_classes = 5
-    train_dset = SemiMarkovDataset(args, dset, type='train')
-    dev_dset = SemiMarkovDataset(args, dset, type='dev')
-
-    if args.supervised:
-        model = train_supervised(args, train_dset, dev_dset, n_classes)
+    if hsmm_args.supervised:
+        model = train_supervised(hsmm_args, data['train'], data['dev'], n_classes)
     else:
-        model = train_unsupervised(args, train_dset, dev_dset, n_classes)
-    gold, pred, pred_remapped = predict(model, dev_dset)
+        model = train_unsupervised(hsmm_args, data['train'], data['dev'], n_classes)
+    gold, pred, pred_remapped = predict(model, data['dev'])
     eval(gold, pred)
     eval(gold, pred_remapped)
     viz(gold[0], pred_remapped[0])
