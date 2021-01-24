@@ -54,9 +54,9 @@ class SemiMarkovDataset(torch.utils.data.Dataset):
         }
         return batch
 
-def train_supervised(args, train_dset, dev_dset, n_classes):
+def train_supervised(args, train_dset, dev_dset):
     n_dim = train_dset[0]['features'].shape[-1]
-    model = SemiMarkovModule(args, n_classes, n_dim).cuda()
+    model = SemiMarkovModule(args, n_dim).cuda()
 
     features = []
     lengths = []
@@ -72,12 +72,12 @@ def train_supervised(args, train_dset, dev_dset, n_classes):
         debug(model, dev_dset, 0)
     return model
 
-def train_unsupervised(args, train_dset, dev_dset, n_classes):
+def train_unsupervised(args, train_dset, dev_dset):
     train_loader = torch.utils.data.DataLoader(train_dset, batch_size=10)
     dev_loader = torch.utils.data.DataLoader(dev_dset, batch_size=10)
 
     n_dim = train_dset[0]['features'].shape[-1]
-    model = SemiMarkovModule(args, n_classes, n_dim).cuda()
+    model = SemiMarkovModule(args, n_dim).cuda()
     model.initialize_gaussian(train_dset.features, train_dset.lengths)
     optimizer = torch.optim.Adam(model.parameters(), model.learning_rate)
 
@@ -94,7 +94,7 @@ def train_unsupervised(args, train_dset, dev_dset, n_classes):
 
     model.train()
     best_loss = 1e9
-    best_model = SemiMarkovModule(args, n_classes, n_dim).cuda()
+    best_model = SemiMarkovModule(args, n_dim).cuda()
     k = 0; patience = 5
 
     def report_acc():
@@ -227,10 +227,11 @@ if __name__ == '__main__':
             self.sm_supervised_cov_smoothing = 0.
             self.supervised = False
             self.max_k = 5
-            self.overrides = []
+            self.overrides = ['cov']
             self.debug = True
+            self.n_classes = 5
     hsmm_args = HSMMArgs()
-    data_args = controller.deserialize('vae8')
+    data_args = controller.deserialize('vae8_beta=0')
     sequences = controller.get_hsmm_sequences(data_args)
     from numba import cuda
     device = cuda.get_current_device()
@@ -239,12 +240,11 @@ if __name__ == '__main__':
     for type in ['train', 'dev', 'test']:
         feat, steps = sequences[type]
         data[type] = SemiMarkovDataset(feat, steps)
-    n_classes = 3
 
     if hsmm_args.supervised:
-        model = train_supervised(hsmm_args, data['train'], data['dev'], n_classes)
+        model = train_supervised(hsmm_args, data['train'], data['dev'])
     else:
-        model = train_unsupervised(hsmm_args, data['train'], data['dev'], n_classes)
+        model = train_unsupervised(hsmm_args, data['train'], data['dev'])
     gold, pred, pred_remapped = predict(model, data['dev'])
     eval(gold, pred)
     eval(gold, pred_remapped)

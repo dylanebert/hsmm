@@ -15,10 +15,10 @@ class SemiMarkovModule(torch.nn.Module):
         parser.add_argument('--sm_supervised_length_smoothing', type=float, default=1e-1)
         parser.add_argument('--sm_supervised_cov_smoothing', type=float, default=0.)
 
-    def __init__(self, args, n_classes, n_dims):
+    def __init__(self, args, n_dims):
         super(SemiMarkovModule, self).__init__()
         self.args = args
-        self.n_classes = n_classes
+        self.n_classes = args.n_classes
         self.input_feature_dim = n_dims
         self.feature_dim = n_dims
         self.max_k = args.max_k

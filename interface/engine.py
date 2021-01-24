@@ -23,6 +23,7 @@ def load_config():
     fpath = request.args.get('fpath')
     global args
     args = controller.deserialize(fpath)
+    controller.initialize(args)
     return 'success'
 
 @app.route('/get_args')
@@ -70,6 +71,8 @@ def get_elem_by_idx():
     x, x_ = controller.get_reconstruction(args, type='dev')
     x, x_ = x[idx], x_[idx]
     seq_end = (x[:,0] == -1e9).argmax()
+    if seq_end == 0:
+        seq_end = x_.shape[0]
     x, x_ = x[:seq_end,:], x_[:seq_end,:]
     datasets = []
     pal = sns.color_palette('hls', x.shape[1]).as_hex()

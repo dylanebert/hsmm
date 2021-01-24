@@ -1,8 +1,6 @@
 import numpy as np
 import tensorflow as tf
 import sys
-sys.path.append('C:/Users/dylan/Documents/')
-from nbc.nbc_wrapper import NBCWrapper
 import argparse
 import random
 import scipy
@@ -137,9 +135,9 @@ class AutoencoderWrapper:
         parser.add_argument('--vae_batch_size', type=int, default=10)
         parser.add_argument('--vae_beta', type=int, default=10)
 
-    def __init__(self, args):
+    def __init__(self, args, nbc_wrapper):
         self.args = args
-        self.nbc_wrapper = NBCWrapper(args)
+        self.nbc_wrapper = nbc_wrapper
         self.x, self.y = self.nbc_wrapper.x, self.nbc_wrapper.y
         self.get_autoencoder()
 
@@ -209,7 +207,7 @@ class AutoencoderWrapper:
 
         self.vae.compile(optimizer='adam')
         callbacks = [
-            tf.keras.callbacks.EarlyStopping(patience=10, min_delta=1e-3, verbose=1),
+            tf.keras.callbacks.EarlyStopping(patience=10, verbose=1),
             tf.keras.callbacks.ModelCheckpoint(HSMM_ROOT + 'autoencoder/weights/tmp.h5', save_best_only=True, verbose=1)
         ]
         self.vae.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
@@ -231,27 +229,3 @@ class AutoencoderWrapper:
             return
         self.train_autoencoder()
         self.save_model()
-
-if __name__ == '__main__':
-    class Args:
-        def __init__(self):
-            self.nbc_subsample = 9
-            self.nbc_dynamic_only = True
-            self.nbc_train_sequencing = 'chunked'
-            self.nbc_dev_sequencing = 'chunked'
-            self.nbc_test_sequencing = 'chunked'
-            self.nbc_chunk_size = 10
-            self.nbc_label_method = 'nonzero_any'
-            self.nbc_features = ['velY:RightHand', 'relVelZ:RightHand']
-
-            self.nbc_output_type = 'seq2seq'
-            self.nbc_preprocessing = []
-
-            self.vae_hidden_size = 8
-            self.vae_batch_size = 10
-            self.vae_beta = 10
-    args = Args()
-    vae_wrapper = AutoencoderWrapper(args)
-    print(vae_wrapper.get_encodings()[0].shape)
-    x, x_ = vae_wrapper.get_reconstruction()
-    print(x.shape, x_.shape)

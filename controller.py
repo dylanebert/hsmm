@@ -1,8 +1,12 @@
 import json
 import argparse
 from autoencoder import AutoencoderWrapper
+import sys
+sys.path.append('C:/Users/dylan/Documents')
+from nbc.nbc_wrapper import NBCWrapper
 import numpy as np
 
+nbc_wrapper = None
 autoencoder_wrapper = None
 
 class Args:
@@ -31,6 +35,7 @@ def deserialize(fname):
     args.nbc_dev_sequencing = args_dict['nbc_dev_sequencing']
     args.nbc_test_sequencing = args_dict['nbc_test_sequencing']
     args.nbc_chunk_size = args_dict['nbc_chunk_size']
+    args.nbc_sliding_chunk_stride = args_dict['nbc_sliding_chunk_stride']
     args.nbc_label_method = args_dict['nbc_label_method']
     args.nbc_features = args_dict['nbc_features']
     args.nbc_output_type = args_dict['nbc_output_type']
@@ -40,9 +45,15 @@ def deserialize(fname):
     args.vae_beta = args_dict['vae_beta']
     return args
 
+def initialize(args):
+    global nbc_wrapper
+    global autoencoder_wrapper
+    nbc_wrapper = NBCWrapper(args)
+    autoencoder_wrapper = AutoencoderWrapper(args, nbc_wrapper)
+
 def get_encodings(args, type='train'):
     global autoencoder_wrapper
-    autoencoder_wrapper = AutoencoderWrapper(args)
+    assert autoencoder_wrapper is not None
     z = autoencoder_wrapper.encodings[type]
     return z
 
@@ -71,11 +82,12 @@ def chunks_to_sessions(z, steps):
     return features, steps
 
 def get_hsmm_sequences(args):
-    autoencoder_wrapper = AutoencoderWrapper(args)
+    nbc_wrapper = NBCWrapper(args)
+    autoencoder_wrapper = AutoencoderWrapper(args, nbc_wrapper)
     sequences = {}
     for type in ['train', 'dev', 'test']:
         z = autoencoder_wrapper.encodings[type]
-        steps = list(autoencoder_wrapper.nbc_wrapper.nbc.steps[type].items())
+        steps = list(nbc_wrapper.nbc.steps[type].items())
         feat, steps = chunks_to_sessions(z, steps)
         sequences[type] = (feat, steps)
     return sequences
