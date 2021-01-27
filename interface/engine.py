@@ -3,7 +3,8 @@ import sys
 sys.path.append('C:/Users/dylan/Documents')
 sys.path.append('C:/Users/dylan/Documents/seg/hsmm')
 from nbc.nbc_wrapper import NBCWrapper
-import controller
+import config
+import bridge
 import json
 import numpy as np
 import seaborn as sns
@@ -22,8 +23,8 @@ def hello():
 def load_config():
     fpath = request.args.get('fpath')
     global args
-    args = controller.deserialize(fpath)
-    controller.initialize(args)
+    args = config.deserialize(fpath)
+    bridge.initialize(args)
     return 'success'
 
 @app.route('/get_args')
@@ -38,7 +39,7 @@ def get_encodings():
     assert args is not None
     global nbc_wrapper
     nbc_wrapper = NBCWrapper(args)
-    z = controller.get_encodings(args, type='dev')
+    z = bridge.get_encodings(args, type='dev')
     y = nbc_wrapper.y['dev']
     datasets = []
     labels = np.unique(y)
@@ -68,7 +69,7 @@ def get_elem_by_idx():
     steps = list(nbc_wrapper.nbc.steps['dev'].values())
     session = keys[idx][0]
     start_step, end_step = int(steps[idx][0]), int(steps[idx][-1])
-    x, x_ = controller.get_reconstruction(args, type='dev')
+    x, x_ = bridge.get_reconstruction(args, type='dev')
     x, x_ = x[idx], x_[idx]
     seq_end = (x[:,0] == -1e9).argmax()
     if seq_end == 0:
