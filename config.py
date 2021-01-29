@@ -34,6 +34,7 @@ def deserialize(fname):
     args.vae_hidden_size = args_dict['vae_hidden_size']
     args.vae_batch_size = args_dict['vae_batch_size']
     args.vae_beta = args_dict['vae_beta']
+    args.vae_warm_up_iters = args_dict['vae_warm_up_iters']
     return args
 
 if __name__ == '__main__':

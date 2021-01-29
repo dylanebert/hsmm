@@ -7,7 +7,8 @@ from hsmm import SemiMarkovModule, optimal_map, spans_to_labels
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import sys
-import controller
+import config
+import bridge
 
 random.seed(a=0)
 torch.manual_seed(0)
@@ -227,12 +228,12 @@ if __name__ == '__main__':
             self.sm_supervised_cov_smoothing = 0.
             self.supervised = False
             self.max_k = 5
-            self.overrides = ['cov']
+            self.overrides = []
             self.debug = True
             self.n_classes = 5
     hsmm_args = HSMMArgs()
-    data_args = controller.deserialize('vae8_beta=0')
-    sequences = controller.get_hsmm_sequences(data_args)
+    data_args = config.deserialize('vae8')
+    sequences = bridge.get_hsmm_sequences(data_args)
     from numba import cuda
     device = cuda.get_current_device()
     device.reset()
@@ -248,4 +249,4 @@ if __name__ == '__main__':
     gold, pred, pred_remapped = predict(model, data['dev'])
     eval(gold, pred)
     eval(gold, pred_remapped)
-    viz(gold[0], pred_remapped[0])
+    viz(gold[0], pred[0])

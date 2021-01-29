@@ -56,7 +56,7 @@ def get_hsmm_sequences(args):
     return sequences
 
 if __name__ == '__main__':
-    args = config.deserialize('vae8_beta=0')
+    args = config.deserialize('vae8')
     initialize(args)
     z = get_encodings(args)
     print(z)
