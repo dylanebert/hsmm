@@ -17,13 +17,10 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 class SemiMarkovDataset(torch.utils.data.Dataset):
-    def __init__(self, features, steps):
+    def __init__(self, features, steps, lengths):
         n = len(features)
-        max_seq_len = 0
+        max_seq_len = max(lengths)
         d = features[0].shape[-1]
-        for feat in features:
-            if feat.shape[0] > max_seq_len:
-                max_seq_len = feat.shape[0]
 
         _features = np.zeros((n, max_seq_len, d))
         _lengths = np.zeros((n,))
@@ -32,9 +29,11 @@ class SemiMarkovDataset(torch.utils.data.Dataset):
         for i in range(n):
             feat = features[i]
             steps_ = steps[i]
+            length = lengths[i]
             _features[i, :feat.shape[0]] = feat
-            _lengths[i] = feat.shape[0]
+            _lengths[i] = length
             _steps[i, :feat.shape[0]] = steps_
+            _labels[i, :feat.shape[0]] = 1
         print(_features.shape)
 
         device = torch.device('cuda')
@@ -239,14 +238,14 @@ if __name__ == '__main__':
     device.reset()
     data = {}
     for type in ['train', 'dev', 'test']:
-        feat, steps = sequences[type]
-        data[type] = SemiMarkovDataset(feat, steps)
+        feat, steps, lengths = sequences[type]
+        data[type] = SemiMarkovDataset(feat, steps, lengths)
 
     if hsmm_args.supervised:
         model = train_supervised(hsmm_args, data['train'], data['dev'])
     else:
         model = train_unsupervised(hsmm_args, data['train'], data['dev'])
-    gold, pred, pred_remapped = predict(model, data['dev'])
+    gold, pred, pred_remapped = predict(model, data['train'])
     eval(gold, pred)
     eval(gold, pred_remapped)
     viz(gold[0], pred[0])
