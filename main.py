@@ -217,7 +217,19 @@ def viz(gold, pred):
     plt.tight_layout()
     plt.show()
 
+def save_model(args, model):
+    id = config.args_to_id(args)
+
+    return
+
+def try_load_model():
+    return
+
 if __name__ == '__main__':
+    class Args:
+        def __init__(self, args_dict):
+            for k, v in args_dict.items():
+                setattr(self, k, v)
     class HSMMArgs:
         def __init__(self):
             self.sm_allow_self_transitions = True
@@ -232,7 +244,10 @@ if __name__ == '__main__':
             self.n_classes = 5
     hsmm_args = HSMMArgs()
     data_args = config.deserialize('vae8')
-    sequences = bridge.get_hsmm_sequences(data_args)
+    args = Args({**hsmm_args, **data_args})
+    config.serialize(args, 'vae8_hsmm')
+
+    sequences = bridge.get_hsmm_sequences(args)
     from numba import cuda
     device = cuda.get_current_device()
     device.reset()
@@ -242,9 +257,9 @@ if __name__ == '__main__':
         data[type] = SemiMarkovDataset(feat, steps, lengths)
 
     if hsmm_args.supervised:
-        model = train_supervised(hsmm_args, data['train'], data['dev'])
+        model = train_supervised(args, data['train'], data['dev'])
     else:
-        model = train_unsupervised(hsmm_args, data['train'], data['dev'])
+        model = train_unsupervised(args, data['train'], data['dev'])
     gold, pred, pred_remapped = predict(model, data['train'])
     eval(gold, pred)
     eval(gold, pred_remapped)

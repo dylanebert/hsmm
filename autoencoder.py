@@ -11,6 +11,7 @@ import seaborn as sns
 import uuid
 import json
 import os
+import config
 
 HSMM_ROOT = 'C:/Users/dylan/Documents/seg/hsmm/'
 
@@ -121,15 +122,8 @@ class AutoencoderWrapper:
             if not os.path.exists(dirpath):
                 os.makedirs(dirpath)
 
-    def args_to_id(self):
-        args_dict = {'nbc_id': self.nbc_wrapper.nbc.args_to_id()}
-        for k in ['vae_hidden_size', 'vae_batch_size', 'vae_beta', 'nbc_output_type', 'nbc_preprocessing']:
-            assert k in vars(self.args), k
-            args_dict[k] = vars(self.args)[k]
-        return json.dumps(args_dict)
-
     def try_load_model(self):
-        args_id = self.args_to_id()
+        args_id = config.args_to_id(self.args, model='autoencoder')
         keypath = HSMM_ROOT + 'autoencoder/keys.json'
         if not os.path.exists(keypath):
             return False
@@ -153,7 +147,7 @@ class AutoencoderWrapper:
         return True
 
     def save_model(self):
-        args_id = self.args_to_id()
+        args_id = config.args_to_id(self.args, model='autoencoder')
         keypath = HSMM_ROOT + 'autoencoder/keys.json'
         if os.path.exists(keypath):
             with open(keypath) as f:
