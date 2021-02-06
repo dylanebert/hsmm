@@ -11,9 +11,13 @@ import seaborn as sns
 import uuid
 import json
 import os
-import config
 
-HSMM_ROOT = 'C:/Users/dylan/Documents/seg/hsmm/'
+assert 'HSMM_ROOT' in os.environ, 'set HSMM_ROOT'
+assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
+HSMM_ROOT = os.environ['HSMM_ROOT']
+NBC_ROOT = os.environ['NBC_ROOT']
+sys.path.append(NBC_ROOT)
+import config
 
 class Sampling(tf.keras.layers.Layer):
     def call(self, inputs):
@@ -42,8 +46,8 @@ class VAE(tf.keras.models.Model):
             tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(input_dim))
         ])
         self.train_loss = tf.keras.metrics.Mean(name='train_loss')
-        self.reconstr_loss_train = tf.keras.metrics.Mean(name='reconstr_loss_train')
-        self.kl_loss_train = tf.keras.metrics.Mean(name='kl_loss_train')
+        self.train_reconstr_loss = tf.keras.metrics.Mean(name='reconstr_loss')
+        self.train_kl_loss = tf.keras.metrics.Mean(name='kl_loss')
         self.dev_loss = tf.keras.metrics.Mean(name='dev_loss')
 
     def call(self, x):
@@ -61,42 +65,42 @@ class VAE(tf.keras.models.Model):
         eps = tf.random.normal(shape=(batch, dim))
         return eps * tf.exp(z_log_var * .5) + z_mean
 
+    def compute_loss(self, x):
+        def log_normal_pdf(sample, mean, logvar):
+            log2pi = tf.math.log(2. * np.pi)
+            return tf.reduce_sum(-.5 * ((sample - mean) ** 2. * tf.exp(-logvar) + logvar + log2pi), axis=1)
+        mean, logvar = self.encode(x)
+        z = self.reparameterize(mean, logvar)
+        x_reconstr = self.decoder(z)
+        logpx_z = tf.reduce_sum(tf.keras.losses.binary_crossentropy(x, x_reconstr), axis=1)
+        logpz = log_normal_pdf(z, 0., 1.)
+        logqz_x = log_normal_pdf(z, mean, logvar)
+        reconstr_loss = tf.reduce_mean(logpx_z)
+        kl_loss = tf.reduce_mean(logqz_x - logpz)
+        return reconstr_loss, kl_loss
+
     @tf.function
     def train_step(self, x):
         beta = self.beta * tf.math.minimum(tf.cast(self.optimizer.iterations, tf.float32) / self.warm_up_iters, tf.cast(1., tf.float32))
         with tf.GradientTape() as tape:
-            z_mean, z_log_var = self.encode(x)
-            z = self.reparameterize(z_mean, z_log_var)
-            x_reconstr = self.decoder(z)
-            x_masked = tf.boolean_mask(x, tf.not_equal(x, -1e9))
-            x_reconstr_masked = tf.boolean_mask(x_reconstr, tf.not_equal(x, -1e9))
-            reconstr_loss = tf.math.reduce_mean(tf.keras.losses.mse(x_masked, x_reconstr_masked))
-            kl_loss = -.5 * (1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var))
-            kl_loss = tf.math.reduce_mean(tf.math.reduce_sum(kl_loss, axis=1))
-            total_loss = reconstr_loss + beta * kl_loss
-        gradients = tape.gradient(total_loss, self.trainable_variables)
+            reconstr_loss, kl_loss = self.compute_loss(x)
+            loss = reconstr_loss + kl_loss
+        gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-        self.train_loss(total_loss)
-        self.reconstr_loss_train(reconstr_loss)
-        self.kl_loss_train(kl_loss)
+        self.train_loss(loss)
+        self.train_reconstr_loss(reconstr_loss)
+        self.train_kl_loss(kl_loss)
         return {
             'loss': self.train_loss.result(),
-            'reconstr_loss': self.reconstr_loss_train.result(),
-            'kl_loss': self.kl_loss_train.result(),
+            'reconstr_loss': self.train_reconstr_loss.result(),
+            'kl_loss': self.train_kl_loss.result(),
             'beta': beta
         }
 
     @tf.function
     def test_step(self, x):
-        z_mean, z_log_var = self.encode(x)
-        x_reconstr = self.decoder(z_mean)
-        x_masked = tf.boolean_mask(x, tf.not_equal(x, -1e9))
-        x_reconstr_masked = tf.boolean_mask(x_reconstr, tf.not_equal(x, -1e9))
-        reconstr_loss = tf.math.reduce_mean(tf.keras.losses.mse(x_masked, x_reconstr_masked))
-        kl_loss = -.5 * (1 + z_log_var - tf.math.square(z_mean) - tf.math.exp(z_log_var))
-        kl_loss = tf.math.reduce_mean(tf.math.reduce_sum(kl_loss, axis=1))
-        total_loss = reconstr_loss + self.beta * kl_loss
-        self.dev_loss(total_loss)
+        loss = self.compute_loss(x)
+        self.dev_loss(loss)
         return {
             'loss': self.dev_loss.result(),
         }
@@ -113,28 +117,15 @@ class AutoencoderWrapper:
         self.args = args
         self.nbc_wrapper = nbc_wrapper
         self.x, self.y = self.nbc_wrapper.x, self.nbc_wrapper.y
-        self.make_paths()
         self.get_autoencoder()
 
-    def make_paths(self):
-        for dir in ['weights', 'encodings', 'reconstructions']:
-            dirpath = '{}autoencoder/{}'.format(HSMM_ROOT, dir)
-            if not os.path.exists(dirpath):
-                os.makedirs(dirpath)
-
-    def try_load_model(self):
-        args_id = config.args_to_id(self.args, model='autoencoder')
-        keypath = HSMM_ROOT + 'autoencoder/keys.json'
-        if not os.path.exists(keypath):
+    def try_load_cached(self):
+        savefile = config.find_savefile(self.args, 'autoencoder')
+        if savefile is None:
             return False
-        with open(keypath) as f:
-            keys = json.load(f)
-        if args_id not in keys:
-            return False
-        fid = keys[args_id]
-        weights_path = HSMM_ROOT + 'autoencoder/weights/{}.h5'.format(fid)
-        encodings_path = HSMM_ROOT + 'autoencoder/encodings/{}.json'.format(fid)
-        reconstructions_path = HSMM_ROOT + 'autoencoder/reconstructions/{}.json'.format(fid)
+        weights_path = NBC_ROOT + 'tmp/autoencoder/{}_weights.h5'.format(savefile)
+        encodings_path = NBC_ROOT + 'tmp/autoencoder/{}_encodings.json'.format(savefile)
+        reconstructions_path = NBC_ROOT + 'tmp/autoencoder/{}_reconstructions.json'.format(savefile)
         self.vae(self.x['train'])
         self.vae.load_weights(weights_path)
         with open(encodings_path) as f:
@@ -144,20 +135,14 @@ class AutoencoderWrapper:
         for type in ['train', 'dev', 'test']:
             self.encodings[type] = np.array(self.encodings[type])
             self.reconstructions[type] = np.array(self.reconstructions[type])
+        print('loaded cached autoencoder')
         return True
 
-    def save_model(self):
-        args_id = config.args_to_id(self.args, model='autoencoder')
-        keypath = HSMM_ROOT + 'autoencoder/keys.json'
-        if os.path.exists(keypath):
-            with open(keypath) as f:
-                keys = json.load(f)
-        else:
-            keys = {}
-        fid = str(uuid.uuid1())
-        weights_path = HSMM_ROOT + 'autoencoder/weights/{}.h5'.format(fid)
-        encodings_path = HSMM_ROOT + 'autoencoder/encodings/{}.json'.format(fid)
-        reconstructions_path = HSMM_ROOT + 'autoencoder/reconstructions/{}.json'.format(fid)
+    def cache(self):
+        savefile = config.generate_savefile(self.args, 'autoencoder')
+        weights_path = NBC_ROOT + 'tmp/autoencoder/{}_weights.h5'.format(savefile)
+        encodings_path = NBC_ROOT + 'tmp/autoencoder/{}_encodings.json'.format(savefile)
+        reconstructions_path = NBC_ROOT + 'tmp/autoencoder/{}_reconstructions.json'.format(savefile)
         self.vae.save_weights(weights_path)
         with open(encodings_path, 'w+') as f:
             serialized = {}
@@ -169,25 +154,21 @@ class AutoencoderWrapper:
             for type in ['train', 'dev', 'test']:
                 serialized[type] = self.reconstructions[type].tolist()
             json.dump(serialized, f)
-        keys[args_id] = fid
-        with open(keypath, 'w+') as f:
-            json.dump(keys, f)
-        print('saved autoencoder')
+        print('cached autoencoder')
 
     def train_autoencoder(self):
         _, seq_len, input_dim = self.x['train'].shape
         train_dset = tf.data.Dataset.from_tensor_slices(self.x['train']).batch(self.args.vae_batch_size)
         dev_dset = tf.data.Dataset.from_tensor_slices(self.x['dev']).batch(self.args.vae_batch_size)
 
-        negative_log_likelihood = lambda x, rv_x: -rv_x.log_prob(x)
-        self.vae.compile(optimizer='adam', loss=negative_log_likelihood)
+        self.vae.compile(optimizer='adam')
         callbacks = [
             tf.keras.callbacks.EarlyStopping(patience=10, verbose=1),
-            tf.keras.callbacks.ModelCheckpoint(HSMM_ROOT + 'autoencoder/weights/tmp.h5', save_best_only=True, verbose=1)
+            tf.keras.callbacks.ModelCheckpoint(NBC_ROOT + 'tmp/autoencoder/tmp.h5', save_best_only=True, verbose=1)
         ]
         self.vae.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
         self.vae(self.x['train'])
-        self.vae.load_weights(HSMM_ROOT + 'autoencoder/weights/tmp.h5')
+        self.vae.load_weights(NBC_ROOT + 'tmp/autoencoder/tmp.h5')
         self.encodings = {}
         self.reconstructions = {}
         for type in ['train', 'dev', 'test']:
@@ -199,8 +180,7 @@ class AutoencoderWrapper:
     def get_autoencoder(self):
         _, seq_len, input_dim = self.x['train'].shape
         self.vae = VAE(seq_len, input_dim, self.args.vae_hidden_size, self.args.vae_beta, self.args.vae_warm_up_iters)
-        if self.try_load_model():
-            print('loaded saved model')
+        if self.try_load_cached():
             return
         self.train_autoencoder()
-        self.save_model()
+        self.cache()

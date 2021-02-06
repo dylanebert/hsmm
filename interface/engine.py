@@ -1,14 +1,20 @@
 from flask import Flask, request
-import sys
-sys.path.append('C:/Users/dylan/Documents')
-sys.path.append('C:/Users/dylan/Documents/seg/hsmm')
-from nbc.nbc_wrapper import NBCWrapper
-import config
-import bridge
 import json
 import numpy as np
 import seaborn as sns
 from colorutils import Color
+import os
+import sys
+
+assert 'HSMM_ROOT' in os.environ, 'set HSMM_ROOT'
+assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
+HSMM_ROOT = os.environ['HSMM_ROOT']
+NBC_ROOT = os.environ['NBC_ROOT']
+sys.path.append(HSMM_ROOT)
+sys.path.append(NBC_ROOT)
+from nbc_wrapper import NBCWrapper
+import config
+import autoencoder_bridge
 
 app = Flask(__name__)
 
@@ -24,7 +30,7 @@ def load_config():
     fpath = request.args.get('fpath')
     global args
     args = config.deserialize(fpath)
-    bridge.initialize(args)
+    autoencoder_bridge.initialize(args)
     return 'success'
 
 @app.route('/get_args')
@@ -39,7 +45,7 @@ def get_encodings():
     assert args is not None
     global nbc_wrapper
     nbc_wrapper = NBCWrapper(args)
-    z = bridge.get_encodings(args, type='dev')
+    z = autoencoder_bridge.get_encodings(args, type='dev')
     y = nbc_wrapper.y['dev']
     datasets = []
     labels = np.unique(y)
@@ -69,7 +75,7 @@ def get_elem_by_idx():
     steps = list(nbc_wrapper.nbc.steps['dev'].values())
     session = keys[idx][0]
     start_step, end_step = int(steps[idx][0]), int(steps[idx][-1])
-    x, x_ = bridge.get_reconstruction(args, type='dev')
+    x, x_ = autoencoder_bridge.get_reconstruction(args, type='dev')
     x, x_ = x[idx], x_[idx]
     seq_end = (x[:,0] == -1e9).argmax()
     if seq_end == 0:
