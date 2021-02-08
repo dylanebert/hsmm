@@ -14,14 +14,15 @@ class SemiMarkovModule(torch.nn.Module):
         parser.add_argument('--sm_supervised_state_smoothing', type=float, default=1e-2)
         parser.add_argument('--sm_supervised_length_smoothing', type=float, default=1e-1)
         parser.add_argument('--sm_supervised_cov_smoothing', type=float, default=0.)
+        parser.add_argument('--sm_cov_factor', type=float, default=1.)
 
     def __init__(self, args, n_dims):
         super(SemiMarkovModule, self).__init__()
         self.args = args
-        self.n_classes = args.n_classes
+        self.n_classes = args.sm_n_classes
         self.input_feature_dim = n_dims
         self.feature_dim = n_dims
-        self.max_k = args.max_k
+        self.max_k = args.sm_max_k
         self.allow_self_transitions = args.sm_allow_self_transitions
         self.learning_rate = args.sm_lr
         self.init_params()
@@ -55,7 +56,7 @@ class SemiMarkovModule(torch.nn.Module):
         mean = feats.mean(dim=0, keepdim=True)
         self.gaussian_means.data.zero_()
         self.gaussian_means.data.add_(mean.expand((self.n_classes, self.feature_dim)))
-        self.gaussian_cov.data = torch.ones(self.n_classes, self.feature_dim, device=self.gaussian_cov.device)
+        self.gaussian_cov.data = torch.ones(self.n_classes, self.feature_dim, device=self.gaussian_cov.device) * self.args.sm_cov_factor
 
     def initialize_supervised(self, feature_list, label_list, length_list, overrides=['mean', 'cov', 'init', 'trans', 'lengths'], freeze=True):
         emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, length_list, covariance_type='diag', n_classes=self.n_classes, max_k=self.max_k)
