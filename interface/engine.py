@@ -14,7 +14,7 @@ sys.path.append(HSMM_ROOT)
 sys.path.append(NBC_ROOT)
 from nbc_wrapper import NBCWrapper
 import config
-import autoencoder_bridge
+import controller
 
 app = Flask(__name__)
 
@@ -30,7 +30,7 @@ def load_config():
     fpath = request.args.get('fpath')
     global args
     args = config.deserialize(fpath)
-    autoencoder_bridge.initialize(args)
+    controller.initialize(args, 'hsmm')
     return 'success'
 
 @app.route('/get_args')
@@ -45,7 +45,7 @@ def get_encodings():
     assert args is not None
     global nbc_wrapper
     nbc_wrapper = NBCWrapper(args)
-    z = autoencoder_bridge.get_encodings(args, type='dev')
+    z = controller.get_encodings(args, type='dev')
     y = nbc_wrapper.y['dev']
     datasets = []
     labels = np.unique(y)
@@ -75,7 +75,7 @@ def get_elem_by_idx():
     steps = list(nbc_wrapper.nbc.steps['dev'].values())
     session = keys[idx][0]
     start_step, end_step = int(steps[idx][0]), int(steps[idx][-1])
-    x, x_ = autoencoder_bridge.get_reconstruction(args, type='dev')
+    x, x_ = controller.get_reconstruction(args, type='dev')
     x, x_ = x[idx], x_[idx]
     seq_end = (x[:,0] == -1e9).argmax()
     if seq_end == 0:

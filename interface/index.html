@@ -8,19 +8,12 @@
     <div class="container-fluid">
         <div class="row">
             <div class="col-sm-6" id="left">
-
             </div>
             <div class="col-sm-6" id="right">
             </div>
         </div>
         <div class="row py-5"></div>
         <div class="row">
-            <div class="col-sm-6" id="bottom-left">
-
-            </div>
-            <div class="col-sm-6" id="bottom-right">
-
-            </div>
         </div>
     </div>
 </body>
@@ -31,19 +24,6 @@ require('bootstrap')
 var Chart = require('chart.js')
 const ipc = require('electron').ipcRenderer
 $.get('http://localhost:5000', function(res) { console.log(res) })
-
-function updateArgs(fpath) {
-    $('#right').html('<p>Loaded config from file: ' + fpath + '</p><ul class="list-group" id="args-list"></ul>')
-    $.get('http://localhost:5000/get_args', function(res) {
-        let args = $.parseJSON(res)
-        $.each(args, function(k, v) {
-            let html = `
-                <li class="list-group-item"><b>` + k + `: </b> ` + v + `</li>
-            `
-            $('#args-list').append(html)
-        })
-    })
-}
 
 function updateChart() {
     $('#left').html(`<p>Loading encodings...</p>`)
@@ -78,24 +58,19 @@ function updateChart() {
                 var idx = activePoints[0]._index
                 var dset_idx = dsetIndices[idx]._datasetIndex
                 var elem = encodingChart.data.datasets[dset_idx].data[idx]
-                $('#bottom-left').html(`
-                    <h4 id="bottom-left-header">Loading reconstruction...</h4>
+                $('#right').html(`
+                    <h4 id="right-header">Loading reconstruction...</h4>
                     <canvas id="reconstruction-viz"></canvas>
                 `)
                 $.get('http://localhost:5000/get_elem_by_idx?idx=' + elem.idx, function(res) {
                     var data = $.parseJSON(res)
-                    $('#bottom-left-header').text('Session: ' + data.session + ', Start: ' + data.start_step + ', End: ' + data.end_step)
+                    $('#right-header').text('Session: ' + data.session + ', Start: ' + data.start_step + ', End: ' + data.end_step)
                     console.log(data)
                     var reconstrCtx = $('#reconstruction-viz')
                     var reconstrChart = new Chart(reconstrCtx, {
                         type: 'line',
                         data: data.data
                     })
-                    $('#bottom-right').html(`
-                        <video style="max-width: 100%; height: auto;" controls>
-                            <source src="http://plunarlabcit.services.brown.edu/videos/` + data.session + `.mp4" type="video/mp4">
-                        </video>
-                    `)
                 })
             }
         })
@@ -105,11 +80,8 @@ function updateChart() {
 ipc.on('loadConfig', (e, fpath) => {
     $('#right').html('')
     $('#left').html('')
-    $('#bottom-left').html('')
-    $('#bottom-right').html('')
     $.get('http://localhost:5000/load_config?fpath=' + fpath, function(res) {
         if(res == 'success') {
-            updateArgs(fpath)
             updateChart()
         }
     })

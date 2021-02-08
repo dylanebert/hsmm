@@ -16,12 +16,6 @@ NBC_ROOT = os.environ['NBC_ROOT']
 sys.path.append(NBC_ROOT)
 import config
 
-'''random.seed(a=0)
-torch.manual_seed(0)
-torch.cuda.manual_seed(0)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False'''
-
 class SemiMarkovDataset(torch.utils.data.Dataset):
     def __init__(self, features, steps, lengths):
         n = len(features)
