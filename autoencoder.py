@@ -25,7 +25,7 @@ class VAE(tf.keras.models.Model):
             tf.keras.layers.Input(shape=(hidden_dim,)),
             tf.keras.layers.RepeatVector(seq_len),
             tf.keras.layers.LSTM(hidden_dim, return_sequences=True),
-            tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(input_dim))
+            tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(input_dim, activation='sigmoid'))
         ])
         self.train_loss = tf.keras.metrics.Mean(name='train_loss')
         self.train_reconstr_loss = tf.keras.metrics.Mean(name='reconstr_loss')
@@ -63,10 +63,11 @@ class VAE(tf.keras.models.Model):
 
     @tf.function
     def train_step(self, x):
-        beta = self.beta * tf.math.minimum(tf.cast(self.optimizer.iterations, tf.float32) / self.warm_up_iters, tf.cast(1., tf.float32))
+        warmup_coef = tf.math.minimum(tf.cast(self.optimizer.iterations, tf.float32) / self.warm_up_iters, tf.cast(1., tf.float32)) ** 3.
+        beta = self.beta * warmup_coef
         with tf.GradientTape() as tape:
             reconstr_loss, kl_loss = self.compute_loss(x)
-            loss = reconstr_loss + kl_loss
+            loss = reconstr_loss + beta * kl_loss
         gradients = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
         self.train_loss(loss)
@@ -81,8 +82,9 @@ class VAE(tf.keras.models.Model):
 
     @tf.function
     def test_step(self, x):
-        loss = self.compute_loss(x)
+        reconstr_loss, kl_loss = self.compute_loss(x)
+        loss = reconstr_loss + self.beta * kl_loss
         self.dev_loss(loss)
         return {
-            'loss': self.dev_loss.result(),
+            'loss': self.dev_loss.result()
         }

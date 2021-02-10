@@ -108,22 +108,22 @@ class HSMMWrapper:
                 session = key[0]
                 feat = z[i]
                 if session not in sessions:
-                    sessions[session] = {'feat': [], 'steps': []}
+                    sessions[session] = {'feat': [], 'indices': []}
                 sessions[session]['feat'].append(feat)
-                sessions[session]['steps'].append(steps_)
-            features, steps, lengths = [], [], []
+                sessions[session]['indices'].append(i)
+            features, lengths, indices = [], [], []
             for session in sessions.keys():
-                steps_ = np.array(sessions[session]['steps'], dtype=int)
                 feat = np.array(sessions[session]['feat'], dtype=np.float32)
+                indices_ = np.array(sessions[session]['indices'], dtype=int)
                 features.append(feat)
-                steps.append(steps_)
                 lengths.append(feat.shape[0])
-            return list(sessions.keys()), steps, features, lengths
+                indices.append(indices_)
+            return features, lengths, indices
 
         def preprocess(sequences):
-            scaler = preprocessing.StandardScaler().fit(np.vstack(sequences['train'][2]))
+            scaler = preprocessing.StandardScaler().fit(np.vstack(sequences['train'][0]))
             for type in ['train', 'dev', 'test']:
-                sessions, steps, feat, lengths = sequences[type]
+                feat, lengths, indices = sequences[type]
                 feat = scaler.transform(np.vstack(feat))
                 feat_ = []
                 i = 0
@@ -131,7 +131,7 @@ class HSMMWrapper:
                     feat_.append(feat[i:i+length,:])
                     i += length
                 assert i == feat.shape[0]
-                sequences[type] = (sessions, steps, feat_, lengths)
+                sequences[type] = (feat_, lengths, indices)
             return sequences
 
         sequences = {}
@@ -139,13 +139,13 @@ class HSMMWrapper:
         for type in ['train', 'dev', 'test']:
             z = self.autoencoder_wrapper.encodings[type]
             steps = list(self.nbc_wrapper.nbc.steps[type].items())
-            sessions, steps, feat, lengths = aggregate_sessions(z, steps)
-            sequences[type] = (sessions, steps, feat, lengths)
+            feat, lengths, indices = aggregate_sessions(z, steps)
+            sequences[type] = (feat, lengths, indices)
         self.sequences = preprocess(sequences)
 
         self.data = {}
         for type in ['train', 'dev', 'test']:
-            _, _, feat, lengths = self.sequences[type]
+            feat, lengths, indices = self.sequences[type]
             self.data[type] = SemiMarkovDataset(feat, lengths)
         self.n_dim = self.data['train'][0]['features'].shape[-1]
 

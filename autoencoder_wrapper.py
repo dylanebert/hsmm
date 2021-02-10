@@ -5,6 +5,8 @@ import os
 import sys
 from autoencoder import VAE
 import json
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
 
 assert 'HSMM_ROOT' in os.environ, 'set HSMM_ROOT'
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
@@ -24,7 +26,7 @@ class AutoencoderWrapper:
     def __init__(self, args, nbc_wrapper):
         self.args = args
         self.nbc_wrapper = nbc_wrapper
-        self.x, self.y = self.nbc_wrapper.x, self.nbc_wrapper.y
+        self.x= self.nbc_wrapper.x
         self.get_autoencoder()
 
     def try_load_cached(self, load_model=False):
@@ -94,3 +96,10 @@ class AutoencoderWrapper:
             return
         self.train_autoencoder()
         self.cache()
+
+    def reduced_encodings(self):
+        reducer = PCA(n_components=2).fit(self.encodings['train'])
+        encodings = {}
+        for type in ['train', 'dev', 'test']:
+            encodings[type] = reducer.transform(self.encodings[type])
+        return encodings
