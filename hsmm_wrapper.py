@@ -17,7 +17,7 @@ sys.path.append(NBC_ROOT)
 import config
 
 class SemiMarkovDataset(torch.utils.data.Dataset):
-    def __init__(self, features, steps, lengths):
+    def __init__(self, features, lengths):
         n = len(features)
         max_seq_len = max(lengths)
         d = features[0].shape[-1]
@@ -25,14 +25,11 @@ class SemiMarkovDataset(torch.utils.data.Dataset):
         _features = np.zeros((n, max_seq_len, d))
         _lengths = np.zeros((n,))
         _labels = np.zeros((n, max_seq_len))
-        _steps = np.zeros((n, max_seq_len))
         for i in range(n):
             feat = features[i]
-            steps_ = steps[i]
             length = lengths[i]
             _features[i, :feat.shape[0]] = feat
             _lengths[i] = length
-            _steps[i, :feat.shape[0]] = steps_
             _labels[i, :feat.shape[0]] = 1
         print(_features.shape)
 
@@ -40,7 +37,6 @@ class SemiMarkovDataset(torch.utils.data.Dataset):
         self.features = torch.FloatTensor(_features).to(device)
         self.lengths = torch.LongTensor(_lengths).to(device)
         self.labels = torch.LongTensor(_labels).to(device)
-        self.steps = torch.LongTensor(_steps).to(device)
 
     def __len__(self):
         return self.features.size(0)
@@ -49,8 +45,7 @@ class SemiMarkovDataset(torch.utils.data.Dataset):
         batch = {
             'features': self.features[index],
             'lengths': self.lengths[index],
-            'labels': self.labels[index],
-            'steps': self.steps[index]
+            'labels': self.labels[index]
         }
         return batch
 
@@ -68,7 +63,6 @@ def viz(pred):
 
 class HSMMWrapper:
     def __init__(self, args, nbc_wrapper, autoencoder_wrapper):
-        self.reset_gpu()
         self.args = args
         self.nbc_wrapper = nbc_wrapper
         self.autoencoder_wrapper = autoencoder_wrapper
@@ -84,14 +78,15 @@ class HSMMWrapper:
             self.predictions[type] = self.predict(type)
         self.cache()
 
-    def try_load_cached(self):
+    def try_load_cached(self, load_model=False):
         savefile = config.find_savefile(self.args, 'hsmm')
         if savefile is None:
             return False
         weights_path = NBC_ROOT + 'tmp/hsmm/{}_weights.pt'.format(savefile)
         predictions_path = NBC_ROOT + 'tmp/hsmm/{}_predictions.json'.format(savefile)
-        self.model = SemiMarkovModule(self.args, self.n_dim).cuda()
-        self.model.load_state_dict(torch.load(weights_path))
+        if load_model:
+            self.model = SemiMarkovModule(self.args, self.n_dim).cuda()
+            self.model.load_state_dict(torch.load(weights_path))
         with open(predictions_path) as f:
             self.predictions = json.load(f)
         print('loaded cached hsmm')
@@ -106,11 +101,6 @@ class HSMMWrapper:
             json.dump(self.predictions, f)
         print('cached hsmm')
 
-    def reset_gpu(self):
-        from numba import cuda
-        device = cuda.get_current_device()
-        device.reset()
-
     def prepare_data(self):
         def aggregate_sessions(z, steps):
             sessions = {}
@@ -120,7 +110,7 @@ class HSMMWrapper:
                 if session not in sessions:
                     sessions[session] = {'feat': [], 'steps': []}
                 sessions[session]['feat'].append(feat)
-                sessions[session]['steps'].append(steps_[-1])
+                sessions[session]['steps'].append(steps_)
             features, steps, lengths = [], [], []
             for session in sessions.keys():
                 steps_ = np.array(sessions[session]['steps'], dtype=int)
@@ -128,12 +118,12 @@ class HSMMWrapper:
                 features.append(feat)
                 steps.append(steps_)
                 lengths.append(feat.shape[0])
-            return features, steps, lengths
+            return list(sessions.keys()), steps, features, lengths
 
         def preprocess(sequences):
-            scaler = preprocessing.StandardScaler().fit(np.vstack(sequences['train'][0]))
+            scaler = preprocessing.StandardScaler().fit(np.vstack(sequences['train'][2]))
             for type in ['train', 'dev', 'test']:
-                feat, steps, lengths = sequences[type]
+                sessions, steps, feat, lengths = sequences[type]
                 feat = scaler.transform(np.vstack(feat))
                 feat_ = []
                 i = 0
@@ -141,7 +131,7 @@ class HSMMWrapper:
                     feat_.append(feat[i:i+length,:])
                     i += length
                 assert i == feat.shape[0]
-                sequences[type] = (feat_, steps, lengths)
+                sequences[type] = (sessions, steps, feat_, lengths)
             return sequences
 
         sequences = {}
@@ -149,13 +139,14 @@ class HSMMWrapper:
         for type in ['train', 'dev', 'test']:
             z = self.autoencoder_wrapper.encodings[type]
             steps = list(self.nbc_wrapper.nbc.steps[type].items())
-            feat, steps, lengths = aggregate_sessions(z, steps)
-            sequences[type] = (feat, steps, lengths)
-        sequences = preprocess(sequences)
+            sessions, steps, feat, lengths = aggregate_sessions(z, steps)
+            sequences[type] = (sessions, steps, feat, lengths)
+        self.sequences = preprocess(sequences)
 
         self.data = {}
         for type in ['train', 'dev', 'test']:
-            self.data[type] = SemiMarkovDataset(*sequences[type])
+            _, _, feat, lengths = self.sequences[type]
+            self.data[type] = SemiMarkovDataset(feat, lengths)
         self.n_dim = self.data['train'][0]['features'].shape[-1]
 
     def train(self):

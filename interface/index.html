@@ -7,14 +7,12 @@
 <body>
     <div class="container-fluid">
         <div class="row">
-            <div class="col-sm-6" id="left">
-            </div>
-            <div class="col-sm-6" id="right">
-            </div>
+            <div class="col-sm-6" id="left"></div>
+            <div class="col-sm-6" id="right"></div>
         </div>
         <div class="row py-5"></div>
-        <div class="row">
-        </div>
+        <div class="row" id="mid" style="height: 100px"></div>
+        <div class="row" id="bottom"></div>
     </div>
 </body>
 <script>
@@ -48,6 +46,9 @@ function updateChart() {
                             display: false
                         }
                     }]
+                },
+                legend: {
+                    display: false
                 }
             }
         })
@@ -77,12 +78,64 @@ function updateChart() {
     })
 }
 
+function updateTimeline(session) {
+    $('#mid').html(`<p>Loading predictions...</p>`)
+    $('#bottom').html(`
+        <p class="text-lead" id="steps"></p>
+        <video width="960" height="540" controls>
+            <source width="960" height="540" src="https://plunarlabcit.services.brown.edu/videos/` + session + `.mp4" type="video/mp4">
+        </video>
+    `)
+    $.get('http://localhost:5000/get_hsmm_predictions?session=' + session, function(res) {
+        var data = $.parseJSON(res)
+        $('#mid').html(`<canvas id="timeline"></canvas>`)
+        var ctx = $('#timeline')
+        var timelineChart = new Chart(ctx, {
+            type: 'horizontalBar',
+            data: {
+                labels: [session],
+                datasets: data
+            },
+            options: {
+                scales: {
+                    xAxes: [{
+                        stacked: true
+                    }],
+                    yAxes: [{
+                        stacked: true
+                    }]
+                },
+                legend: {
+                    display: false
+                },
+                tooltips: {
+                    mode: 'x'
+                },
+                maintainAspectRatio: false
+            }
+        })
+        ctx.click(function(e) {
+            var datasetIndices = timelineChart.getDatasetAtEvent(e)
+            if(datasetIndices.length > 0) {
+                var index = datasetIndices[0]._datasetIndex
+                $.get('http://localhost:5000/get_seq_by_idx?idx=' + index, function(res) {
+                    var data = $.parseJSON(res)
+                    start_step = data[0]
+                    end_step = data[1]
+                    $('#steps').text(start_step + '-' + end_step)
+                })
+            }
+        })
+    })
+}
+
 ipc.on('loadConfig', (e, fpath) => {
     $('#right').html('')
     $('#left').html('')
     $.get('http://localhost:5000/load_config?fpath=' + fpath, function(res) {
         if(res == 'success') {
             updateChart()
+            updateTimeline('17_1c_task1')
         }
     })
 })

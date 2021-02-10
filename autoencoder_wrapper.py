@@ -27,15 +27,18 @@ class AutoencoderWrapper:
         self.x, self.y = self.nbc_wrapper.x, self.nbc_wrapper.y
         self.get_autoencoder()
 
-    def try_load_cached(self):
+    def try_load_cached(self, load_model=False):
         savefile = config.find_savefile(self.args, 'autoencoder')
         if savefile is None:
             return False
         weights_path = NBC_ROOT + 'tmp/autoencoder/{}_weights.h5'.format(savefile)
         encodings_path = NBC_ROOT + 'tmp/autoencoder/{}_encodings.json'.format(savefile)
         reconstructions_path = NBC_ROOT + 'tmp/autoencoder/{}_reconstructions.json'.format(savefile)
-        self.vae(self.x['train'])
-        self.vae.load_weights(weights_path)
+        if load_model:
+            _, seq_len, input_dim = self.x['train'].shape
+            self.vae = VAE(seq_len, input_dim, self.args.vae_hidden_size, self.args.vae_beta, self.args.vae_warm_up_iters)
+            self.vae(self.x['train'])
+            self.vae.load_weights(weights_path)
         with open(encodings_path) as f:
             self.encodings = json.load(f)
         with open(reconstructions_path) as f:
@@ -69,6 +72,7 @@ class AutoencoderWrapper:
         train_dset = tf.data.Dataset.from_tensor_slices(self.x['train']).batch(self.args.vae_batch_size)
         dev_dset = tf.data.Dataset.from_tensor_slices(self.x['dev']).batch(self.args.vae_batch_size)
 
+        self.vae = VAE(seq_len, input_dim, self.args.vae_hidden_size, self.args.vae_beta, self.args.vae_warm_up_iters)
         self.vae.compile(optimizer='adam')
         callbacks = [
             tf.keras.callbacks.EarlyStopping(patience=10, verbose=1),
@@ -86,8 +90,6 @@ class AutoencoderWrapper:
             self.reconstructions[type] = x_.numpy()
 
     def get_autoencoder(self):
-        _, seq_len, input_dim = self.x['train'].shape
-        self.vae = VAE(seq_len, input_dim, self.args.vae_hidden_size, self.args.vae_beta, self.args.vae_warm_up_iters)
         if self.try_load_cached():
             return
         self.train_autoencoder()

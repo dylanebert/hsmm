@@ -39,6 +39,13 @@ def get_reconstruction(args, type='train'):
     x_ = autoencoder_wrapper.reconstructions[type]
     return x, x_
 
+def get_predictions(args, type='train'):
+    global hsmm_wrapper
+    assert hsmm_wrapper is not None
+    sessions = hsmm_wrapper.sequences[type][0]
+    pred = hsmm_wrapper.predictions[type]
+    return sessions, pred
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='hidden=8_beta=10')
@@ -52,4 +59,3 @@ if __name__ == '__main__':
         z = autoencoder_wrapper.encodings['train']
     if cmd_args.model == 'hsmm':
         pred = hsmm_wrapper.predictions['train']
-        print(pred)
