@@ -50,7 +50,7 @@ function getSession(session) {
     updateTimeline(session)
     $('#bottom').html(`
         <p class="lead" id="steps"></p>
-        <video width="960" height="540" controls>
+        <video width="960" height="540" id="vid" controls>
             <source width="960" height="540" src="https://plunarlabcit.services.brown.edu/videos/` + session + `.mp4" type="video/mp4">
         </video>
     `)
@@ -107,12 +107,15 @@ function updateEncoding(elem) {
     $.get('http://localhost:5000/get_encoding_by_idx?idx=' + elem.idx, function(res) {
         var data = $.parseJSON(res)
         $('#right-header').text('Start: ' + data.start_step + ', End: ' + data.end_step)
-        console.log(data)
         var reconstrCtx = $('#reconstruction-viz')
         var reconstrChart = new Chart(reconstrCtx, {
             type: 'line',
             data: data.data
         })
+        var vid = document.getElementById('vid')
+        vid.play()
+        vid.pause()
+        vid.currentTime = data.timestamp
     })
 }
 
@@ -141,21 +144,28 @@ function updateTimeline(session) {
                     display: false
                 },
                 tooltips: {
-                    mode: 'x'
+                    mode: 'x',
+                    callbacks: {
+                        label: function(tooltipItem, data) {
+                            var elem = data.datasets[tooltipItem.datasetIndex]
+                            return elem.idx
+                        },
+                        title: function(tooltipItem, data) {
+                            return ''
+                        }
+                    }
                 },
                 maintainAspectRatio: false
             }
         })
         ctx.click(function(e) {
-            var datasetIndices = timelineChart.getDatasetAtEvent(e)
-            if(datasetIndices.length > 0) {
-                var index = datasetIndices[0]._datasetIndex
-                $.get('http://localhost:5000/get_seq_by_idx?idx=' + index + '&session=' + session, function(res) {
-                    var data = $.parseJSON(res)
-                    start_step = data[0]
-                    end_step = data[1]
-                    $('#steps').text(start_step + '-' + end_step)
-                })
+            var dsetIndices = timelineChart.getDatasetAtEvent(e)
+            var activePoints = timelineChart.getElementsAtEvent(e)
+            if(dsetIndices.length > 0) {
+                var idx = activePoints[0]._index
+                var dset_idx = dsetIndices[idx]._datasetIndex
+                var elem = timelineChart.data.datasets[dset_idx]
+                updateEncoding(elem)
             }
         })
     })

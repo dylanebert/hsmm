@@ -64,8 +64,12 @@ def get_encoding_by_idx():
     nbc_wrapper = controller.nbc_wrapper
     idx = int(request.args.get('idx'))
     x, x_ = controller.get_reconstruction(args, idx, type='dev')
+    keys = list(nbc_wrapper.nbc.steps['dev'].keys())
     steps = list(nbc_wrapper.nbc.steps['dev'].values())
     start_step, end_step = int(steps[idx][0]), int(steps[idx][-1])
+    sessions = np.array([key[0] for key in keys])
+    session_start_step = keys[(sessions == keys[idx][0]).argmax()][1]
+    timestamp = (start_step - session_start_step) / 90.
 
     #convert to json-friendly representation
     datasets = []
@@ -74,8 +78,8 @@ def get_encoding_by_idx():
         data = []
         data_ = []
         for i in range(x.shape[0]):
-            data.append(float(x[i,j]))
-            data_.append(float(x_[i,j]))
+            data.append(float(x[i, j]))
+            data_.append(float(x_[i, j]))
         color = Color(hex=pal[j])
         hsv = color.hsv
         hue = hsv[0]
@@ -88,7 +92,7 @@ def get_encoding_by_idx():
         datasets.append(dataset_)
     labels = [int(v) for v in np.arange(0, x.shape[0])]
     data = {'datasets': datasets, 'labels': labels}
-    res = {'start_step': start_step, 'end_step': end_step, 'data': data}
+    res = {'start_step': start_step, 'end_step': end_step, 'data': data, 'timestamp': timestamp}
     return json.dumps(res)
 
 @app.route('/get_hsmm_predictions')
@@ -96,49 +100,17 @@ def get_hsmm_predictions():
     global args
     assert args is not None
     session = request.args.get('session')
-    predictions, _ = controller.get_predictions(args, session, 'dev')
+    predictions, indices = controller.get_predictions(args, session, 'dev')
     datasets = []
     pal = sns.color_palette('hls', args.sm_n_classes).as_hex()
-    seq = rle(predictions)
-    for label, length in seq:
+    for i, pred in enumerate(predictions):
         datasets.append({
-            'data': [length],
-            'label': label,
-            'backgroundColor': pal[label]
+            'data': [1],
+            'label': int(pred),
+            'backgroundColor': pal[pred],
+            'idx': int(indices[i])
         })
     return json.dumps(datasets)
-
-@app.route('/get_seq_by_idx')
-def get_seq_by_idx():
-    global args
-    assert args is not None
-    idx = int(request.args.get('idx'))
-    session = request.args.get('session')
-    predictions, indices = controller.get_predictions(args, session, 'dev')
-    seq = rle(predictions)
-    label, length = seq[idx]
-    seq_start_idx, seq_end_idx = rle_lookup(seq, idx)
-    steps = list(controller.nbc_wrapper.nbc.steps['dev'].values())
-    start_step, end_step = int(steps[indices[seq_start_idx]][0]), int(steps[indices[seq_end_idx]][-1])
-    return json.dumps([start_step, end_step])
-
-def rle(seq):
-    encoding = []
-    prev = seq[0]
-    i = 1
-    for x in seq[1:]:
-        if not x == prev:
-            encoding.append((prev, i))
-            i = 0
-        i += 1
-        prev = x
-    return encoding
-
-def rle_lookup(seq, idx):
-    seq_idx = 0
-    for i in range(0, idx):
-        seq_idx += seq[i][1]
-    return seq_idx, seq_idx + seq[idx][1]
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000)

@@ -25,7 +25,7 @@ class VAE(tf.keras.models.Model):
             tf.keras.layers.Input(shape=(hidden_dim,)),
             tf.keras.layers.RepeatVector(seq_len),
             tf.keras.layers.LSTM(hidden_dim, return_sequences=True),
-            tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(input_dim, activation='sigmoid'))
+            tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(input_dim))
         ])
         self.train_loss = tf.keras.metrics.Mean(name='train_loss')
         self.train_reconstr_loss = tf.keras.metrics.Mean(name='reconstr_loss')
@@ -54,7 +54,7 @@ class VAE(tf.keras.models.Model):
         mean, logvar = self.encode(x)
         z = self.reparameterize(mean, logvar)
         x_reconstr = self.decoder(z)
-        logpx_z = tf.reduce_sum(tf.keras.losses.binary_crossentropy(x, x_reconstr), axis=1)
+        logpx_z = tf.reduce_sum(tf.keras.losses.mse(x, x_reconstr), axis=1)
         logpz = log_normal_pdf(z, 0., 1.)
         logqz_x = log_normal_pdf(z, mean, logvar)
         reconstr_loss = tf.reduce_mean(logpx_z)
