@@ -10,6 +10,7 @@ import sys
 import os
 from sklearn import preprocessing
 import json
+from numba import cuda
 
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 NBC_ROOT = os.environ['NBC_ROOT']
@@ -63,11 +64,16 @@ def viz(pred):
 
 class HSMMWrapper:
     def __init__(self, args, nbc_wrapper, autoencoder_wrapper):
+        self.reset()
         self.args = args
         self.nbc_wrapper = nbc_wrapper
         self.autoencoder_wrapper = autoencoder_wrapper
         self.prepare_data()
         self.get_hsmm()
+
+    def reset(self):
+        device = cuda.get_current_device()
+        device.reset()
 
     def get_hsmm(self):
         if self.try_load_cached():
