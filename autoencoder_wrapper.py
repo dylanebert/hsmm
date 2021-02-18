@@ -7,6 +7,7 @@ from autoencoder import VAE
 import json
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
+import uuid
 
 assert 'HSMM_ROOT' in os.environ, 'set HSMM_ROOT'
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
