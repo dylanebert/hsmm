@@ -76,13 +76,14 @@ class AutoencoderWrapper:
 
         self.vae = VAE(seq_len, input_dim, self.args.vae_hidden_size, self.args.vae_beta, self.args.vae_warm_up_iters)
         self.vae.compile(optimizer='adam')
+        tmp_path = NBC_ROOT + 'cache/autoencoder/tmp_{}.h5'.format(tmp_id)
         callbacks = [
             tf.keras.callbacks.EarlyStopping(patience=10, verbose=1),
-            tf.keras.callbacks.ModelCheckpoint(NBC_ROOT + 'cache/autoencoder/tmp.h5', save_best_only=True, verbose=1)
+            tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
         ]
         self.vae.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
         self.vae(self.x['train'])
-        self.vae.load_weights(NBC_ROOT + 'cache/autoencoder/tmp.h5')
+        self.vae.load_weights(tmp_path)
         self.encodings = {}
         self.reconstructions = {}
         for type in ['train', 'dev', 'test']:
