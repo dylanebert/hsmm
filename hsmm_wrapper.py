@@ -88,8 +88,8 @@ class HSMMWrapper:
         savefile = config.find_savefile(self.args, 'hsmm')
         if savefile is None:
             return False
-        weights_path = NBC_ROOT + 'tmp/hsmm/{}_weights.pt'.format(savefile)
-        predictions_path = NBC_ROOT + 'tmp/hsmm/{}_predictions.json'.format(savefile)
+        weights_path = NBC_ROOT + 'cache/hsmm/{}_weights.pt'.format(savefile)
+        predictions_path = NBC_ROOT + 'cache/hsmm/{}_predictions.json'.format(savefile)
         if load_model:
             self.model = SemiMarkovModule(self.args, self.n_dim).cuda()
             self.model.load_state_dict(torch.load(weights_path))
@@ -100,8 +100,8 @@ class HSMMWrapper:
 
     def cache(self):
         savefile = config.generate_savefile(self.args, 'hsmm')
-        weights_path = NBC_ROOT + 'tmp/hsmm/{}_weights.pt'.format(savefile)
-        predictions_path = NBC_ROOT + 'tmp/hsmm/{}_predictions.json'.format(savefile)
+        weights_path = NBC_ROOT + 'cache/hsmm/{}_weights.pt'.format(savefile)
+        predictions_path = NBC_ROOT + 'cache/hsmm/{}_predictions.json'.format(savefile)
         torch.save(self.model.state_dict(), weights_path)
         with open(predictions_path, 'w+') as f:
             json.dump(self.predictions, f)

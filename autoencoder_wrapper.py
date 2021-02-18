@@ -33,9 +33,9 @@ class AutoencoderWrapper:
         savefile = config.find_savefile(self.args, 'autoencoder')
         if savefile is None:
             return False
-        weights_path = NBC_ROOT + 'tmp/autoencoder/{}_weights.h5'.format(savefile)
-        encodings_path = NBC_ROOT + 'tmp/autoencoder/{}_encodings.json'.format(savefile)
-        reconstructions_path = NBC_ROOT + 'tmp/autoencoder/{}_reconstructions.json'.format(savefile)
+        weights_path = NBC_ROOT + 'cache/autoencoder/{}_weights.h5'.format(savefile)
+        encodings_path = NBC_ROOT + 'cache/autoencoder/{}_encodings.json'.format(savefile)
+        reconstructions_path = NBC_ROOT + 'cache/autoencoder/{}_reconstructions.json'.format(savefile)
         if load_model:
             _, seq_len, input_dim = self.x['train'].shape
             self.vae = VAE(seq_len, input_dim, self.args.vae_hidden_size, self.args.vae_beta, self.args.vae_warm_up_iters)
@@ -53,9 +53,9 @@ class AutoencoderWrapper:
 
     def cache(self):
         savefile = config.generate_savefile(self.args, 'autoencoder')
-        weights_path = NBC_ROOT + 'tmp/autoencoder/{}_weights.h5'.format(savefile)
-        encodings_path = NBC_ROOT + 'tmp/autoencoder/{}_encodings.json'.format(savefile)
-        reconstructions_path = NBC_ROOT + 'tmp/autoencoder/{}_reconstructions.json'.format(savefile)
+        weights_path = NBC_ROOT + 'cache/autoencoder/{}_weights.h5'.format(savefile)
+        encodings_path = NBC_ROOT + 'cache/autoencoder/{}_encodings.json'.format(savefile)
+        reconstructions_path = NBC_ROOT + 'cache/autoencoder/{}_reconstructions.json'.format(savefile)
         self.vae.save_weights(weights_path)
         with open(encodings_path, 'w+') as f:
             serialized = {}
@@ -78,11 +78,11 @@ class AutoencoderWrapper:
         self.vae.compile(optimizer='adam')
         callbacks = [
             tf.keras.callbacks.EarlyStopping(patience=10, verbose=1),
-            tf.keras.callbacks.ModelCheckpoint(NBC_ROOT + 'tmp/autoencoder/tmp.h5', save_best_only=True, verbose=1)
+            tf.keras.callbacks.ModelCheckpoint(NBC_ROOT + 'cache/autoencoder/tmp.h5', save_best_only=True, verbose=1)
         ]
         self.vae.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
         self.vae(self.x['train'])
-        self.vae.load_weights(NBC_ROOT + 'tmp/autoencoder/tmp.h5')
+        self.vae.load_weights(NBC_ROOT + 'cache/autoencoder/tmp.h5')
         self.encodings = {}
         self.reconstructions = {}
         for type in ['train', 'dev', 'test']:
