@@ -76,7 +76,7 @@ class AutoencoderWrapper:
 
         self.vae = VAE(seq_len, input_dim, self.args.vae_hidden_size, self.args.vae_beta, self.args.vae_warm_up_iters)
         self.vae.compile(optimizer='adam')
-        tmp_path = NBC_ROOT + 'cache/autoencoder/tmp_{}.h5'.format(tmp_id)
+        tmp_path = NBC_ROOT + 'cache/autoencoder/tmp_{}.h5'.format(str(uuid.uuid1()))
         callbacks = [
             tf.keras.callbacks.EarlyStopping(patience=10, verbose=1),
             tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
