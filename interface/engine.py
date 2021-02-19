@@ -45,7 +45,7 @@ def get_encodings():
     session = request.args.get('session')
     nbc_wrapper = controller.nbc_wrapper
     data = controller.get_encodings(args, session, type='dev')
-    pal = sns.color_palette('hls', len(data['label'].unique())).as_hex()
+    pal = sns.color_palette('hls', data['label'].max() + 1).as_hex()
     data['x'] = data.apply(lambda row: row['encoding'][0], axis=1)
     data['y'] = data.apply(lambda row: row['encoding'][1], axis=1)
     datasets = []

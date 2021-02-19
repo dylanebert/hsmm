@@ -10,7 +10,6 @@ import sys
 import os
 from sklearn import preprocessing
 import json
-from numba import cuda
 
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 NBC_ROOT = os.environ['NBC_ROOT']
@@ -34,7 +33,7 @@ class SemiMarkovDataset(torch.utils.data.Dataset):
             _labels[i, :feat.shape[0]] = 1
         print(_features.shape)
 
-        device = torch.device('cuda')
+        device = torch.device('cpu')
         self.features = torch.FloatTensor(_features).to(device)
         self.lengths = torch.LongTensor(_lengths).to(device)
         self.labels = torch.LongTensor(_labels).to(device)
@@ -64,16 +63,11 @@ def viz(pred):
 
 class HSMMWrapper:
     def __init__(self, args, nbc_wrapper, autoencoder_wrapper):
-        self.reset()
         self.args = args
         self.nbc_wrapper = nbc_wrapper
         self.autoencoder_wrapper = autoencoder_wrapper
         self.prepare_data()
         self.get_hsmm()
-
-    def reset(self):
-        device = cuda.get_current_device()
-        device.reset()
 
     def get_hsmm(self):
         if self.try_load_cached():
@@ -91,7 +85,7 @@ class HSMMWrapper:
         weights_path = NBC_ROOT + 'cache/hsmm/{}_weights.pt'.format(savefile)
         predictions_path = NBC_ROOT + 'cache/hsmm/{}_predictions.json'.format(savefile)
         if load_model:
-            self.model = SemiMarkovModule(self.args, self.n_dim).cuda()
+            self.model = SemiMarkovModule(self.args, self.n_dim)
             self.model.load_state_dict(torch.load(weights_path))
         with open(predictions_path) as f:
             self.predictions = json.load(f)
@@ -162,7 +156,7 @@ class HSMMWrapper:
             self.train_unsupervised()
 
     def train_supervised(self):
-        self.model = SemiMarkovModule(self.args, self.n_dim).cuda()
+        self.model = SemiMarkovModule(self.args, self.n_dim)
         features = []
         lengths = []
         labels = []
@@ -180,7 +174,7 @@ class HSMMWrapper:
         train_loader = torch.utils.data.DataLoader(self.data['train'], batch_size=10)
         dev_loader = torch.utils.data.DataLoader(self.data['dev'], batch_size=10)
 
-        self.model = SemiMarkovModule(self.args, self.n_dim).cuda()
+        self.model = SemiMarkovModule(self.args, self.n_dim)
         self.model.initialize_gaussian(self.data['train'].features, self.data['train'].lengths)
         optimizer = torch.optim.Adam(self.model.parameters(), self.model.learning_rate)
 
@@ -196,7 +190,7 @@ class HSMMWrapper:
             self.model.initialize_supervised(features, labels, lengths, overrides=self.args.sm_overrides, freeze=True)
 
         best_loss = 1e9
-        best_model = SemiMarkovModule(self.args, self.n_dim).cuda()
+        best_model = SemiMarkovModule(self.args, self.n_dim)
         k = 0; patience = 5
         epoch = 0
         self.model.train()
