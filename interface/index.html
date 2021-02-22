@@ -46,6 +46,10 @@ function updateSessions() {
 }
 
 function getSession(session) {
+    $('#right').html('')
+    $('#left').html('')
+    $('#mid').html('')
+    $('#bottom').html('')
     updateChart(session)
     updateTimeline(session)
     $('#bottom').html(`
@@ -174,6 +178,8 @@ function updateTimeline(session) {
 ipc.on('loadConfig', (e, fpath) => {
     $('#right').html('')
     $('#left').html('')
+    $('#mid').html('')
+    $('#bottom').html('')
     $.get('http://localhost:5000/load_config?fpath=' + fpath, function(res) {
         if(res == 'success') {
             updateSessions()

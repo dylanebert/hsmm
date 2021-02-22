@@ -63,7 +63,7 @@ def get_predictions(args, session, type='train'):
     indices = hsmm_wrapper.sequences[type][2]
     predictions = hsmm_wrapper.predictions[type]
     keys = list(nbc_wrapper.nbc.steps[type].keys())
-    sessions = [key[0] for key in keys]
+    sessions = np.unique(np.array([key[0] for key in keys])).tolist()
     session_idx = sessions.index(session)
     return predictions[session_idx], indices[session_idx]
 
