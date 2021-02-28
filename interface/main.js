@@ -45,6 +45,18 @@ function createWindow() {
         {
             label: 'View',
             submenu: [
+                {
+                    label: 'Exploration',
+                    click: () => {
+                        win.loadFile('index.html')
+                    }
+                },
+                {
+                    label: 'Evaluation',
+                    click: () => {
+                        win.loadFile('eval.html')
+                    }
+                },
                 { role: 'reload' },
                 { role: 'forceReload' },
                 { role: 'toggleDevTools' }

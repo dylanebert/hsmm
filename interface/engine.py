@@ -16,6 +16,7 @@ sys.path.append(NBC_ROOT)
 from nbc_wrapper import NBCWrapper
 import config
 import controller
+from eval import OddManOut
 
 app = Flask(__name__)
 args = None
@@ -32,6 +33,17 @@ def load_config():
     controller.initialize(args, 'hsmm')
     return 'success'
 
+@app.route('/get_eval')
+def get_eval():
+    global args
+    assert args is not None
+    qidx = int(request.args.get('qidx'))
+    nbc_wrapper = controller.nbc_wrapper
+    hsmm_wrapper = controller.hsmm_wrapper
+    eval = OddManOut(nbc_wrapper, hsmm_wrapper)
+    questions = eval.get_eval()
+    return json.dumps(questions[qidx])
+
 @app.route('/get_sessions')
 def get_sessions():
     keys = list(controller.nbc_wrapper.nbc.steps['dev'].keys())
@@ -44,7 +56,7 @@ def get_encodings():
     assert args is not None
     session = request.args.get('session')
     nbc_wrapper = controller.nbc_wrapper
-    data = controller.get_encodings(args, session, type='dev')
+    data = controller.get_encodings(args, session=session, type='dev')
     pal = sns.color_palette('hls', data['label'].max() + 1).as_hex()
     data['x'] = data.apply(lambda row: row['encoding'][0], axis=1)
     data['y'] = data.apply(lambda row: row['encoding'][1], axis=1)

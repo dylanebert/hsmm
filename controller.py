@@ -57,15 +57,18 @@ def get_reconstruction(args, idx, type='train'):
     x_ = autoencoder_wrapper.reconstructions[type][idx]
     return x, x_
 
-def get_predictions(args, session, type='train'):
+def get_predictions(args, session=None, type='train'):
     global hsmm_wrapper
     assert hsmm_wrapper is not None
     indices = hsmm_wrapper.sequences[type][2]
     predictions = hsmm_wrapper.predictions[type]
-    keys = list(nbc_wrapper.nbc.steps[type].keys())
-    sessions = np.unique(np.array([key[0] for key in keys])).tolist()
-    session_idx = sessions.index(session)
-    return predictions[session_idx], indices[session_idx]
+    if session is None:
+        return predictions, indices
+    else:
+        keys = list(nbc_wrapper.nbc.steps[type].keys())
+        sessions = np.unique(np.array([key[0] for key in keys])).tolist()
+        session_idx = sessions.index(session)
+        return predictions[session_idx], indices[session_idx]
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
