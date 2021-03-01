@@ -6,6 +6,7 @@ from sklearn import preprocessing
 import os
 import sys
 import argparse
+from eval import OddManOut
 
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 sys.path.append(os.environ['NBC_ROOT'])
@@ -20,11 +21,11 @@ def initialize(args, model):
     global nbc_wrapper
     global autoencoder_wrapper
     global hsmm_wrapper
-    if model in ['nbc', 'autoencoder', 'hsmm']:
+    if model in ['nbc', 'autoencoder', 'hsmm', 'eval']:
         nbc_wrapper = NBCWrapper(args)
-    if model in ['autoencoder', 'hsmm']:
+    if model in ['autoencoder', 'hsmm', 'eval']:
         autoencoder_wrapper = AutoencoderWrapper(args, nbc_wrapper)
-    if model in ['hsmm']:
+    if model in ['hsmm', 'eval']:
         hsmm_wrapper = HSMMWrapper(args, nbc_wrapper, autoencoder_wrapper)
 
 def get_encodings(args, session, type='train'):
@@ -73,7 +74,7 @@ def get_predictions(args, session=None, type='train'):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='hidden=16')
-    parser.add_argument('--model', type=str, choices=['nbc', 'autoencoder', 'hsmm'], default='autoencoder')
+    parser.add_argument('--model', type=str, choices=['nbc', 'autoencoder', 'hsmm', 'eval'], default='autoencoder')
     cmd_args = parser.parse_args()
     args = config.deserialize(cmd_args.config)
     initialize(args, cmd_args.model)
@@ -83,3 +84,6 @@ if __name__ == '__main__':
         z = autoencoder_wrapper.encodings['train']
     if cmd_args.model == 'hsmm':
         pred = hsmm_wrapper.predictions['train']
+    if cmd_args.model == 'eval':
+        eval = OddManOut(nbc_wrapper, hsmm_wrapper)
+        eval.evaluate()

@@ -46,13 +46,13 @@ function createWindow() {
             label: 'View',
             submenu: [
                 {
-                    label: 'Exploration',
+                    label: 'Toggle Exploration',
                     click: () => {
                         win.loadFile('index.html')
                     }
                 },
                 {
-                    label: 'Evaluation',
+                    label: 'Toggle Evaluation',
                     click: () => {
                         win.loadFile('eval.html')
                     }

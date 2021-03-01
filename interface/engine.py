@@ -37,12 +37,28 @@ def load_config():
 def get_eval():
     global args
     assert args is not None
-    qidx = int(request.args.get('qidx'))
     nbc_wrapper = controller.nbc_wrapper
     hsmm_wrapper = controller.hsmm_wrapper
     eval = OddManOut(nbc_wrapper, hsmm_wrapper)
-    questions = eval.get_eval()
-    return json.dumps(questions[qidx])
+    questions = eval.questions
+    answers = eval.answers
+    for qidx in range(len(answers)):
+        if answers[qidx] == None:
+            return json.dumps((qidx, questions[qidx]))
+    return 'done'
+
+@app.route('/write_answer')
+def write_answer():
+    global args
+    assert args is not None
+    qidx = int(request.args.get('qidx'))
+    answer = int(request.args.get('answer'))
+    nbc_wrapper = controller.nbc_wrapper
+    hsmm_wrapper = controller.hsmm_wrapper
+    eval = OddManOut(nbc_wrapper, hsmm_wrapper)
+    eval.answers[qidx] = answer
+    eval.update_answers()
+    return 'success'
 
 @app.route('/get_sessions')
 def get_sessions():
