@@ -112,8 +112,6 @@ class OddManOut:
 
     def rle(self):
         rle_dict = {}
-        for label in np.unique(np.array(self.predictions[0])):
-            rle_dict[label] = []
         for predictions, indices in zip(self.predictions, self.indices):
             prev_label = predictions[0]
             k = 1
@@ -121,6 +119,8 @@ class OddManOut:
                 label = predictions[i]
                 idx = indices[i]
                 if label != prev_label:
+                    if label not in rle_dict:
+                        rle_dict[label] = []
                     rle_dict[label].append((idx, k))
                     prev_label = label
                     k = 1

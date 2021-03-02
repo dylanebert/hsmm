@@ -35,7 +35,16 @@ var playVideos;
 
 function getEval() {
     playVideos = false;
+    var i;
+    for(i = 0; i < 4; i++) {
+        $('#q' + i).html('')
+    }
+    setTimeout(get, 1000)
+}
+
+function get() {
     $.get('http://localhost:5000/get_eval', function(res) {
+        playVideos = true
         if(res == 'done') {
             console.log('done')
             $('.col-sm-6').html(``)
@@ -54,7 +63,6 @@ function getEval() {
                     <source width="960" height="540" src="https://plunarlabcit.services.brown.edu/videos/` + session + `.mp4" type="video/mp4">
                 </video>
             `)
-            playVideos = true;
             loopVideoClip('vid' + i, startTimestamp, endTimestamp)
         }
     })
