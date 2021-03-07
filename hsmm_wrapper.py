@@ -15,9 +15,10 @@ assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 NBC_ROOT = os.environ['NBC_ROOT']
 sys.path.append(NBC_ROOT)
 import config
+from nbc import NBC
 
 class SemiMarkovDataset(torch.utils.data.Dataset):
-    def __init__(self, features, lengths):
+    def __init__(self, features, lengths, device):
         n = len(features)
         max_seq_len = max(lengths)
         d = features[0].shape[-1]
@@ -32,8 +33,8 @@ class SemiMarkovDataset(torch.utils.data.Dataset):
             _lengths[i] = length
             _labels[i, :feat.shape[0]] = 1
         print(_features.shape)
+        print(_lengths.shape)
 
-        device = torch.device('cpu')
         self.features = torch.FloatTensor(_features).to(device)
         self.lengths = torch.LongTensor(_lengths).to(device)
         self.labels = torch.LongTensor(_labels).to(device)
@@ -62,11 +63,19 @@ def viz(pred):
     plt.show()
 
 class HSMMWrapper:
-    def __init__(self, args, nbc_wrapper, autoencoder_wrapper):
+    def __init__(self, args, nbc=None, nbc_wrapper=None, autoencoder_wrapper=None, device='cpu'):
         self.args = args
-        self.nbc_wrapper = nbc_wrapper
-        self.autoencoder_wrapper = autoencoder_wrapper
-        self.prepare_data()
+        self.device = torch.device(device)
+        if nbc is not None:
+            self.direct = True
+            self.nbc = nbc
+            self.prepare_direct_inputs()
+        else:
+            assert nbc_wrapper is not None and autoencoder_wrapper is not None
+            self.direct = False
+            self.nbc_wrapper = nbc_wrapper
+            self.autoencoder_wrapper = autoencoder_wrapper
+            self.prepare_data()
         self.get_hsmm()
 
     def get_hsmm(self):
@@ -79,13 +88,18 @@ class HSMMWrapper:
         self.cache()
 
     def try_load_cached(self, load_model=False):
-        savefile = config.find_savefile(self.args, 'hsmm')
+        if self.direct:
+            savefile = config.find_savefile(self.args, 'hsmm_direct')
+        else:
+            savefile = config.find_savefile(self.args, 'hsmm')
         if savefile is None:
             return False
         weights_path = NBC_ROOT + 'cache/hsmm/{}_weights.pt'.format(savefile)
         predictions_path = NBC_ROOT + 'cache/hsmm/{}_predictions.json'.format(savefile)
+        if not os.path.exists(weights_path) or not os.path.exists(predictions_path):
+            return False
         if load_model:
-            self.model = SemiMarkovModule(self.args, self.n_dim)
+            self.model = SemiMarkovModule(self.args, self.n_dim).to(self.device)
             self.model.load_state_dict(torch.load(weights_path))
         with open(predictions_path) as f:
             self.predictions = json.load(f)
@@ -93,7 +107,10 @@ class HSMMWrapper:
         return True
 
     def cache(self):
-        savefile = config.generate_savefile(self.args, 'hsmm')
+        if self.direct:
+            savefile = config.generate_savefile(self.args, 'hsmm_direct')
+        else:
+            savefile = config.generate_savefile(self.args, 'hsmm')
         weights_path = NBC_ROOT + 'cache/hsmm/{}_weights.pt'.format(savefile)
         predictions_path = NBC_ROOT + 'cache/hsmm/{}_predictions.json'.format(savefile)
         torch.save(self.model.state_dict(), weights_path)
@@ -146,7 +163,29 @@ class HSMMWrapper:
         self.data = {}
         for type in ['train', 'dev', 'test']:
             feat, lengths, indices = self.sequences[type]
-            self.data[type] = SemiMarkovDataset(feat, lengths)
+            self.data[type] = SemiMarkovDataset(feat, lengths, self.device)
+        self.n_dim = self.data['train'][0]['features'].shape[-1]
+
+    def prepare_direct_inputs(self):
+        sequences = {}
+        for type in ['train', 'dev', 'test']:
+            lengths = []
+            for feat in self.nbc.features[type].values():
+                lengths.append(feat.shape[0])
+                n_dim = feat.shape[1]
+            lengths = np.array(lengths)
+            n = len(self.nbc.features[type])
+            indices = np.arange(n)
+            features = np.zeros((n, lengths.max(), n_dim))
+            for i, feat in enumerate(self.nbc.features[type].values()):
+                features[i, :feat.shape[0]] = feat
+            sequences[type] = (features, lengths, indices)
+        self.sequences = sequences
+
+        self.data = {}
+        for type in ['train', 'dev', 'test']:
+            feat, lengths, indices = self.sequences[type]
+            self.data[type] = SemiMarkovDataset(feat, lengths, self.device)
         self.n_dim = self.data['train'][0]['features'].shape[-1]
 
     def train(self):
@@ -156,7 +195,7 @@ class HSMMWrapper:
             self.train_unsupervised()
 
     def train_supervised(self):
-        self.model = SemiMarkovModule(self.args, self.n_dim)
+        self.model = SemiMarkovModule(self.args, self.n_dim).to(self.device)
         features = []
         lengths = []
         labels = []
@@ -174,7 +213,7 @@ class HSMMWrapper:
         train_loader = torch.utils.data.DataLoader(self.data['train'], batch_size=10)
         dev_loader = torch.utils.data.DataLoader(self.data['dev'], batch_size=10)
 
-        self.model = SemiMarkovModule(self.args, self.n_dim)
+        self.model = SemiMarkovModule(self.args, self.n_dim).to(self.device)
         self.model.initialize_gaussian(self.data['train'].features, self.data['train'].lengths)
         optimizer = torch.optim.Adam(self.model.parameters(), self.model.learning_rate)
 
@@ -190,7 +229,7 @@ class HSMMWrapper:
             self.model.initialize_supervised(features, labels, lengths, overrides=self.args.sm_overrides, freeze=True)
 
         best_loss = 1e9
-        best_model = SemiMarkovModule(self.args, self.n_dim)
+        best_model = SemiMarkovModule(self.args, self.n_dim).to(self.device)
         k = 0; patience = 5
         epoch = 0
         self.model.train()
@@ -258,3 +297,8 @@ class HSMMWrapper:
         np.set_printoptions(suppress=True)
         for param in ['mean', 'cov', 'trans', 'lengths']:
             print('{}\n{}\n'.format(param, params[param]))
+
+if __name__ == '__main__':
+    args = config.deserialize('apple_motion')
+    nbc = NBC(args)
+    HSMMWrapper(args, nbc=nbc, device='cuda')

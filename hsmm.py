@@ -53,7 +53,7 @@ class SemiMarkovModule(torch.nn.Module):
             feats.append(data[i, :lengths[i]])
         feats = torch.cat(feats, dim=0)
         assert d == self.feature_dim
-        mean = feats.mean(dim=0, keepdim=True)
+        mean = feats.mean(dim=0, keepdim=True).to(self.gaussian_means.device)
         self.gaussian_means.data.zero_()
         self.gaussian_means.data.add_(mean.expand((self.n_classes, self.feature_dim)))
         self.gaussian_cov.data = torch.ones(self.n_classes, self.feature_dim, device=self.gaussian_cov.device) * self.args.sm_cov_factor

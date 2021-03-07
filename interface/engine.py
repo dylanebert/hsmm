@@ -30,7 +30,10 @@ def load_config():
     fpath = request.args.get('fpath')
     global args
     args = config.deserialize(fpath)
-    controller.initialize(args, 'hsmm')
+    if args.nbc_train_sequencing == 'session':
+        controller.initialize(args, 'hsmm_direct')
+    else:
+        controller.initialize(args, 'hsmm')
     return 'success'
 
 @app.route('/get_eval')
@@ -62,12 +65,13 @@ def write_answer():
 
 @app.route('/get_sessions')
 def get_sessions():
-    keys = list(controller.nbc_wrapper.nbc.steps['dev'].keys())
-    sessions = np.unique([key[0] for key in keys]).tolist()
+    sessions = controller.get_sessions('dev')
     return json.dumps(sessions)
 
 @app.route('/get_encodings')
 def get_encodings():
+    if controller.nbc_wrapper is None:
+        return 'na'
     global args
     assert args is not None
     session = request.args.get('session')
@@ -89,39 +93,52 @@ def get_encodings():
 @app.route('/get_encoding_by_idx')
 def get_encoding_by_idx():
     #get encoding by index
+    nbc = controller.nbc
     nbc_wrapper = controller.nbc_wrapper
-    idx = int(request.args.get('idx'))
-    x, x_ = controller.get_reconstruction(args, idx, type='dev')
-    keys = list(nbc_wrapper.nbc.steps['dev'].keys())
-    steps = list(nbc_wrapper.nbc.steps['dev'].values())
-    start_step, end_step = int(steps[idx][0]), int(steps[idx][-1])
-    sessions = np.array([key[0] for key in keys])
-    session_start_step = keys[(sessions == keys[idx][0]).argmax()][1]
-    timestamp = (start_step - session_start_step) / 90.
+    if nbc is not None:
+        idx = int(request.args.get('idx'))
+        keys = list(nbc.steps['dev'].keys())
+        steps = list(nbc.steps['dev'].values())
+        start_step, end_step = int(steps[idx][0]), int(steps[idx][-1])
+        sessions = np.array([key[0] for key in keys])
+        session_start_step = start_step
+        timestamp = (start_step - session_start_step) / 90.
+        res = {'start_step': start_step, 'end_step': end_step, 'timestamp': timestamp}
+        return json.dumps(res)
+    else:
+        assert nbc_wrapper is not None
+        idx = int(request.args.get('idx'))
+        x, x_ = controller.get_reconstruction(args, idx, type='dev')
+        keys = list(nbc_wrapper.nbc.steps['dev'].keys())
+        steps = list(nbc_wrapper.nbc.steps['dev'].values())
+        start_step, end_step = int(steps[idx][0]), int(steps[idx][-1])
+        sessions = np.array([key[0] for key in keys])
+        session_start_step = keys[(sessions == keys[idx][0]).argmax()][1]
+        timestamp = (start_step - session_start_step) / 90.
 
-    #convert to json-friendly representation
-    datasets = []
-    pal = sns.color_palette('hls', x.shape[1]).as_hex()
-    for j in range(x.shape[1]):
-        data = []
-        data_ = []
-        for i in range(x.shape[0]):
-            data.append(float(x[i, j]))
-            data_.append(float(x_[i, j]))
-        color = Color(hex=pal[j])
-        hsv = color.hsv
-        hue = hsv[0]
-        sat = max(hsv[1] - .3, 0.)
-        val = min(hsv[2] + .3, 1.)
-        original_color = Color(hsv=(hue, sat, val))
-        dataset = {'label': nbc_wrapper.nbc.feature_mapping[str(j)], 'data': data, 'fill': False, 'borderColor': original_color.hex}
-        dataset_ = {'label': nbc_wrapper.nbc.feature_mapping[str(j)] + '_reconstr', 'data': data_, 'fill': False, 'borderColor': color.hex}
-        datasets.append(dataset)
-        datasets.append(dataset_)
-    labels = [int(v) for v in np.arange(0, x.shape[0])]
-    data = {'datasets': datasets, 'labels': labels}
-    res = {'start_step': start_step, 'end_step': end_step, 'data': data, 'timestamp': timestamp}
-    return json.dumps(res)
+        #convert to json-friendly representation
+        datasets = []
+        pal = sns.color_palette('hls', x.shape[1]).as_hex()
+        for j in range(x.shape[1]):
+            data = []
+            data_ = []
+            for i in range(x.shape[0]):
+                data.append(float(x[i, j]))
+                data_.append(float(x_[i, j]))
+            color = Color(hex=pal[j])
+            hsv = color.hsv
+            hue = hsv[0]
+            sat = max(hsv[1] - .3, 0.)
+            val = min(hsv[2] + .3, 1.)
+            original_color = Color(hsv=(hue, sat, val))
+            dataset = {'label': nbc_wrapper.nbc.feature_mapping[str(j)], 'data': data, 'fill': False, 'borderColor': original_color.hex}
+            dataset_ = {'label': nbc_wrapper.nbc.feature_mapping[str(j)] + '_reconstr', 'data': data_, 'fill': False, 'borderColor': color.hex}
+            datasets.append(dataset)
+            datasets.append(dataset_)
+        labels = [int(v) for v in np.arange(0, x.shape[0])]
+        data = {'datasets': datasets, 'labels': labels}
+        res = {'start_step': start_step, 'end_step': end_step, 'data': data, 'timestamp': timestamp}
+        return json.dumps(res)
 
 @app.route('/get_hsmm_predictions')
 def get_hsmm_predictions():
@@ -129,6 +146,8 @@ def get_hsmm_predictions():
     assert args is not None
     session = request.args.get('session')
     predictions, indices = controller.get_predictions(args, session, 'dev')
+    if not isinstance(indices, list):
+        indices = [indices] * len(predictions)
     datasets = []
     pal = sns.color_palette('hls', args.sm_n_classes).as_hex()
     for i, pred in enumerate(predictions):

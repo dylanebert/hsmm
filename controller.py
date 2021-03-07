@@ -10,14 +10,17 @@ from eval import OddManOut
 
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 sys.path.append(os.environ['NBC_ROOT'])
+from nbc import NBC
 from nbc_wrapper import NBCWrapper
 import config
 
+nbc = None
 nbc_wrapper = None
 autoencoder_wrapper = None
 hsmm_wrapper = None
 
 def initialize(args, model):
+    global nbc
     global nbc_wrapper
     global autoencoder_wrapper
     global hsmm_wrapper
@@ -26,7 +29,10 @@ def initialize(args, model):
     if model in ['autoencoder', 'hsmm', 'eval']:
         autoencoder_wrapper = AutoencoderWrapper(args, nbc_wrapper)
     if model in ['hsmm', 'eval']:
-        hsmm_wrapper = HSMMWrapper(args, nbc_wrapper, autoencoder_wrapper)
+        hsmm_wrapper = HSMMWrapper(args, nbc_wrapper=nbc_wrapper, autoencoder_wrapper=autoencoder_wrapper)
+    if model == 'hsmm_direct':
+        nbc = NBC(args)
+        hsmm_wrapper = HSMMWrapper(args, nbc=nbc)
 
 def get_encodings(args, session, type='train'):
     global autoencoder_wrapper, hsmm_wrapper
@@ -66,15 +72,26 @@ def get_predictions(args, session=None, type='train'):
     if session is None:
         return predictions, indices
     else:
-        keys = list(nbc_wrapper.nbc.steps[type].keys())
-        sessions = np.unique(np.array([key[0] for key in keys])).tolist()
+        sessions = get_sessions(type)
         session_idx = sessions.index(session)
         return predictions[session_idx], indices[session_idx]
+
+def get_sessions(type='train'):
+    global nbc
+    global nbc_wrapper
+    if nbc is not None:
+        keys = list(nbc.steps[type].keys())
+        sessions = [key[0] for key in keys]
+    else:
+        assert nbc_wrapper is not None
+        keys = list(nbc_wrapper.nbc.steps[type].keys())
+        sessions = np.unique([key[0] for key in keys]).tolist()
+    return sessions
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='hidden=16')
-    parser.add_argument('--model', type=str, choices=['nbc', 'autoencoder', 'hsmm', 'eval'], default='autoencoder')
+    parser.add_argument('--model', type=str, choices=['nbc', 'autoencoder', 'hsmm', 'eval', 'hsmm_direct'], default='autoencoder')
     cmd_args = parser.parse_args()
     args = config.deserialize(cmd_args.config)
     initialize(args, cmd_args.model)
