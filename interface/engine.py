@@ -99,9 +99,14 @@ def get_encoding_by_idx():
         idx = int(request.args.get('idx'))
         keys = list(nbc.steps['dev'].keys())
         steps = list(nbc.steps['dev'].values())
-        start_step, end_step = int(steps[idx][0]), int(steps[idx][-1])
+        steps_ = np.concatenate(steps)
+        keys_ = []
+        for i, key in enumerate(keys):
+            keys_ += [key] * steps[i].shape[0]
         sessions = np.array([key[0] for key in keys])
-        session_start_step = start_step
+        session_idx = (sessions == keys_[idx][0]).argmax()
+        start_step, end_step = int(steps_[idx]), int(steps_[idx] + 9)
+        session_start_step = steps[session_idx][0]
         timestamp = (start_step - session_start_step) / 90.
         res = {'start_step': start_step, 'end_step': end_step, 'timestamp': timestamp}
         return json.dumps(res)
@@ -146,8 +151,6 @@ def get_hsmm_predictions():
     assert args is not None
     session = request.args.get('session')
     predictions, indices = controller.get_predictions(args, session, 'dev')
-    if not isinstance(indices, list):
-        indices = [indices] * len(predictions)
     datasets = []
     pal = sns.color_palette('hls', args.sm_n_classes).as_hex()
     for i, pred in enumerate(predictions):

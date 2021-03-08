@@ -175,10 +175,13 @@ class HSMMWrapper:
                 n_dim = feat.shape[1]
             lengths = np.array(lengths)
             n = len(self.nbc.features[type])
-            indices = np.arange(n)
+            indices = []
             features = np.zeros((n, lengths.max(), n_dim))
+            idx = 0
             for i, feat in enumerate(self.nbc.features[type].values()):
-                features[i, :feat.shape[0]] = feat
+                features[i, :feat.shape[0], :] = feat
+                indices.append(np.arange(idx, idx + feat.shape[0]))
+                idx += feat.shape[0]
             sequences[type] = (features, lengths, indices)
         self.sequences = sequences
 
