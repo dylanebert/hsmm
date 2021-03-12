@@ -31,9 +31,9 @@ def load_config():
     global args
     args = config.deserialize(fpath)
     if args.nbc_train_sequencing == 'session':
-        controller.initialize(args, 'hsmm_direct')
+        controller.initialize(args, 'hsmm_direct', 'cpu')
     else:
-        controller.initialize(args, 'hsmm')
+        controller.initialize(args, 'hsmm', 'cpu')
     return 'success'
 
 @app.route('/get_eval')

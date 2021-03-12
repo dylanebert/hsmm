@@ -19,7 +19,7 @@ nbc_wrapper = None
 autoencoder_wrapper = None
 hsmm_wrapper = None
 
-def initialize(args, model):
+def initialize(args, model, device):
     global nbc
     global nbc_wrapper
     global autoencoder_wrapper
@@ -29,10 +29,10 @@ def initialize(args, model):
     if model in ['autoencoder', 'hsmm', 'eval']:
         autoencoder_wrapper = AutoencoderWrapper(args, nbc_wrapper)
     if model in ['hsmm', 'eval']:
-        hsmm_wrapper = HSMMWrapper(args, nbc_wrapper=nbc_wrapper, autoencoder_wrapper=autoencoder_wrapper)
+        hsmm_wrapper = HSMMWrapper(args, nbc_wrapper=nbc_wrapper, autoencoder_wrapper=autoencoder_wrapper, device=device)
     if model == 'hsmm_direct':
         nbc = NBC(args)
-        hsmm_wrapper = HSMMWrapper(args, nbc=nbc)
+        hsmm_wrapper = HSMMWrapper(args, nbc=nbc, device=device)
 
 def get_encodings(args, session, type='train'):
     global autoencoder_wrapper, hsmm_wrapper
@@ -92,9 +92,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='hidden=16')
     parser.add_argument('--model', type=str, choices=['nbc', 'autoencoder', 'hsmm', 'eval', 'hsmm_direct'], default='autoencoder')
+    parser.add_argument('--device', type=str, choices=['cpu', 'cuda'], default='cpu')
     cmd_args = parser.parse_args()
     args = config.deserialize(cmd_args.config)
-    initialize(args, cmd_args.model)
+    initialize(args, cmd_args.model, cmd_args.device)
     if cmd_args.model == 'nbc':
         print(nbc_wrapper.nbc.steps['train'].items())
     if cmd_args.model == 'autoencoder':

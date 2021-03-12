@@ -33,7 +33,6 @@ class SemiMarkovDataset(torch.utils.data.Dataset):
             _lengths[i] = length
             _labels[i, :feat.shape[0]] = 1
         print(_features.shape)
-        print(_lengths.shape)
 
         self.features = torch.FloatTensor(_features).to(device)
         self.lengths = torch.LongTensor(_lengths).to(device)
