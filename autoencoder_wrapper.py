@@ -113,9 +113,11 @@ class AutoencoderWrapper:
         return encodings
 
 if __name__ == '__main__':
-    args = config.deserialize('apple_velocity')
+    args = config.deserialize('autoencoder_Apple')
     nbc_wrapper = NBCWrapper(args)
     nbc_wrapper_trim = NBCWrapper(args, True)
+    print(nbc_wrapper.x['dev'].shape)
+    print(nbc_wrapper_trim.x['dev'].shape)
     autoencoder_wrapper = AutoencoderWrapper(args, nbc_wrapper)
 
     import matplotlib.pyplot as plt

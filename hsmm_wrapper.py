@@ -64,6 +64,8 @@ def viz(pred):
 class HSMMWrapper:
     def __init__(self, args, nbc=None, nbc_wrapper=None, autoencoder_wrapper=None, device='cpu'):
         self.args = args
+        self.args.sm_debug = True
+        self.args.sm_supervised = False
         self.device = torch.device(device)
         if nbc is not None:
             self.direct = True
