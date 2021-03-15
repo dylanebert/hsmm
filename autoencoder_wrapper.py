@@ -112,16 +112,27 @@ class AutoencoderWrapper:
             encodings[type] = reducer.transform(self.encodings[type])
         return encodings
 
-if __name__ == '__main__':
-    args = config.deserialize('autoencoder_Apple')
-    nbc_wrapper = NBCWrapper(args)
-    nbc_wrapper_trim = NBCWrapper(args, True)
-    print(nbc_wrapper.x['dev'].shape)
-    print(nbc_wrapper_trim.x['dev'].shape)
-    autoencoder_wrapper = AutoencoderWrapper(args, nbc_wrapper)
+class AutoencoderConcatWrapper(AutoencoderWrapper):
+    def __init__(self, configs):
+        print('concatenating autoencoder encodings')
+        self.x = {'train': [], 'dev': [], 'test': []}
+        self.encodings = {'train': [], 'dev': [], 'test': []}
+        self.reconstructions = {'train': [], 'dev': [], 'test': []}
+        for cfg in configs:
+            print(cfg)
+            args = config.deserialize(cfg)
+            nw = NBCWrapper(args)
+            aw = AutoencoderWrapper(args, nw)
+            for type in ['train', 'dev', 'test']:
+                self.x[type].append(aw.x[type])
+                self.encodings[type].append(aw.encodings[type])
+                self.reconstructions[type].append(aw.reconstructions[type])
+        for type in ['train', 'dev', 'test']:
+            self.x[type] = np.concatenate(self.x[type], axis=-1)
+            self.encodings[type] = np.concatenate(self.encodings[type], axis=-1)
+            self.reconstructions[type] = np.concatenate(self.reconstructions[type], axis=-1)
 
-    import matplotlib.pyplot as plt
-    z = autoencoder_wrapper.encodings['dev']
-    print(z.shape)
-    plt.plot(np.mean(z, axis=-1))
-    plt.show()
+
+if __name__ == '__main__':
+    configs = ['hsmm_Apple_cov=0.1', 'hsmm_Ball_cov=0.1', 'hsmm_Banana_cov=1.0']
+    wrapper = AutoencoderConcatWrapper(configs)

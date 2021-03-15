@@ -29,7 +29,7 @@ def initialize(args, model, device):
     if model in ['autoencoder', 'hsmm', 'eval']:
         autoencoder_wrapper = AutoencoderWrapper(args, nbc_wrapper)
     if model in ['hsmm', 'eval']:
-        hsmm_wrapper = HSMMWrapper(args, nbc_wrapper=nbc_wrapper, autoencoder_wrapper=autoencoder_wrapper, device=device)
+        hsmm_wrapper = HSMMWrapper(args, nbc_wrapper=nbc_wrapper.nbc.steps, autoencoder_wrapper=autoencoder_wrapper, device=device)
     if model == 'hsmm_direct':
         nbc = NBC(args)
         hsmm_wrapper = HSMMWrapper(args, nbc=nbc, device=device)

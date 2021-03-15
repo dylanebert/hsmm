@@ -16,6 +16,7 @@ sys.path.append(NBC_ROOT)
 from nbc_wrapper import NBCWrapper
 import config
 import controller
+import extended_controller
 from eval import OddManOut
 
 app = Flask(__name__)
@@ -30,10 +31,13 @@ def load_config():
     fpath = request.args.get('fpath')
     global args
     args = config.deserialize(fpath)
-    if args.nbc_train_sequencing == 'session':
-        controller.initialize(args, 'hsmm_direct', 'cpu')
+    if isinstance(args.nbc_features, list):
+        if args.nbc_train_sequencing == 'session':
+            controller.initialize(args, 'hsmm_direct', 'cpu')
+        else:
+            controller.initialize(args, 'hsmm', 'cpu')
     else:
-        controller.initialize(args, 'hsmm', 'cpu')
+        extended_controller.initialize(args)
     return 'success'
 
 @app.route('/get_eval')
@@ -136,8 +140,10 @@ def get_encoding_by_idx():
             sat = max(hsv[1] - .3, 0.)
             val = min(hsv[2] + .3, 1.)
             original_color = Color(hsv=(hue, sat, val))
-            dataset = {'label': nbc_wrapper.nbc.feature_mapping[str(j)], 'data': data, 'fill': False, 'borderColor': original_color.hex}
-            dataset_ = {'label': nbc_wrapper.nbc.feature_mapping[str(j)] + '_reconstr', 'data': data_, 'fill': False, 'borderColor': color.hex}
+            #dataset = {'label': nbc_wrapper.nbc.feature_mapping[str(j)], 'data': data, 'fill': False, 'borderColor': original_color.hex}
+            #dataset_ = {'label': nbc_wrapper.nbc.feature_mapping[str(j)] + '_reconstr', 'data': data_, 'fill': False, 'borderColor': color.hex}
+            dataset = {'label': '0', 'data': data, 'fill': False, 'borderColor': original_color.hex}
+            dataset_ = {'label': '0' + '_reconstr', 'data': data_, 'fill': False, 'borderColor': color.hex}
             datasets.append(dataset)
             datasets.append(dataset_)
         labels = [int(v) for v in np.arange(0, x.shape[0])]

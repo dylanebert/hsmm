@@ -62,7 +62,7 @@ def viz(pred):
     plt.show()
 
 class HSMMWrapper:
-    def __init__(self, args, nbc=None, nbc_wrapper=None, autoencoder_wrapper=None, device='cpu'):
+    def __init__(self, args, nbc=None, steps=None, autoencoder_wrapper=None, device='cpu'):
         self.args = args
         self.args.sm_debug = True
         self.args.sm_supervised = False
@@ -72,9 +72,9 @@ class HSMMWrapper:
             self.nbc = nbc
             self.prepare_direct_inputs()
         else:
-            assert nbc_wrapper is not None and autoencoder_wrapper is not None
+            assert steps is not None and autoencoder_wrapper is not None
             self.direct = False
-            self.nbc_wrapper = nbc_wrapper
+            self.steps = steps
             self.autoencoder_wrapper = autoencoder_wrapper
             self.prepare_data()
         self.get_hsmm()
@@ -156,7 +156,7 @@ class HSMMWrapper:
         lengths = {}
         for type in ['train', 'dev', 'test']:
             z = self.autoencoder_wrapper.encodings[type]
-            steps = list(self.nbc_wrapper.nbc.steps[type].items())
+            steps = self.steps[type].items()
             feat, lengths, indices = aggregate_sessions(z, steps)
             sequences[type] = (feat, lengths, indices)
         self.sequences = preprocess(sequences)
