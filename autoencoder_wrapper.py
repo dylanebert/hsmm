@@ -119,7 +119,6 @@ class AutoencoderConcatWrapper(AutoencoderWrapper):
         self.encodings = {'train': [], 'dev': [], 'test': []}
         self.reconstructions = {'train': [], 'dev': [], 'test': []}
         for cfg in configs:
-            print(cfg)
             args = config.deserialize(cfg)
             nw = NBCWrapper(args)
             aw = AutoencoderWrapper(args, nw)
@@ -132,7 +131,57 @@ class AutoencoderConcatWrapper(AutoencoderWrapper):
             self.encodings[type] = np.concatenate(self.encodings[type], axis=-1)
             self.reconstructions[type] = np.concatenate(self.reconstructions[type], axis=-1)
 
+class AutoencoderMaxWrapper(AutoencoderWrapper):
+    def __init__(self, configs, add_indices=False):
+        print('getting max autoencoder encodings')
+        self.x = {'train': [], 'dev': [], 'test': []}
+        self.encodings = {'train': [], 'dev': [], 'test': []}
+        self.reconstructions = {'train': [], 'dev': [], 'test': []}
+        for cfg in configs:
+            args = config.deserialize(cfg)
+            nw = NBCWrapper(args)
+            aw = AutoencoderWrapper(args, nw)
+            for type in ['train', 'dev', 'test']:
+                self.x[type].append(aw.x[type])
+                self.encodings[type].append(aw.encodings[type])
+                self.reconstructions[type].append(aw.reconstructions[type])
+        for type in ['train', 'dev', 'test']:
+            x = np.stack(self.x[type], axis=1)
+            encodings = np.stack(self.encodings[type], axis=1)
+            reconstr = np.stack(self.reconstructions[type], axis=1)
+
+            magnitudes = np.linalg.norm(x, axis=(2, 3))
+            max_indices = np.argmax(magnitudes, axis=1)
+            max_x = []
+            max_encodings = []
+            max_reconstr = []
+            for i in range(encodings.shape[0]):
+                max_x.append(x[i, max_indices[i], :])
+                max_encodings.append(encodings[i, max_indices[i], :])
+                max_reconstr.append(reconstr[i, max_indices[i], :])
+            if add_indices:
+                one_hot = []
+                n_objs = len(configs)
+                for i in range(encodings.shape[0]):
+                    v = magnitudes[i, max_indices[i]]
+                    vec = np.zeros((n_objs,))
+                    if v > 0.:
+                        vec[max_indices[i]] = 1
+                    one_hot.append(vec)
+                one_hot = np.array(one_hot)
+                max_encodings = np.concatenate((max_encodings, one_hot), axis=-1)
+                print(max_encodings.shape)
+
+
+            max_x = np.array(max_x)
+            max_encodings = np.array(max_encodings)
+            max_reconstr = np.array(max_reconstr)
+
+            self.x[type] = max_x
+            self.encodings[type] = max_encodings
+            self.reconstructions[type] = max_reconstr
+
 
 if __name__ == '__main__':
     configs = ['hsmm_Apple_cov=0.1', 'hsmm_Ball_cov=0.1', 'hsmm_Banana_cov=1.0']
-    wrapper = AutoencoderConcatWrapper(configs)
+    wrapper = AutoencoderMaxWrapper(configs, add_indices=True)
