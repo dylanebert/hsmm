@@ -16,7 +16,6 @@ sys.path.append(NBC_ROOT)
 from nbc_wrapper import NBCWrapper
 import config
 import controller
-import extended_controller
 from eval import OddManOut
 
 app = Flask(__name__)
@@ -31,21 +30,15 @@ def load_config():
     fpath = request.args.get('fpath')
     global args
     args = config.deserialize(fpath)
-    if isinstance(args.nbc_features, list):
-        if args.nbc_train_sequencing == 'session':
-            controller.initialize(args, 'hsmm_direct', 'cpu')
-        else:
-            controller.initialize(args, 'hsmm', 'cpu')
-    else:
-        extended_controller.initialize(args)
+    controller.initialize(args)
     return 'success'
 
 @app.route('/get_eval')
 def get_eval():
     global args
     assert args is not None
-    nbc_wrapper = controller.nbc_wrapper
     hsmm_wrapper = controller.hsmm_wrapper
+    nbc_wrapper = hsmm_wrapper.autoencoder_wrapper.nbc_wrapper
     eval = OddManOut(nbc_wrapper, hsmm_wrapper)
     questions = eval.questions
     answers = eval.answers
@@ -60,8 +53,8 @@ def write_answer():
     assert args is not None
     qidx = int(request.args.get('qidx'))
     answer = int(request.args.get('answer'))
-    nbc_wrapper = controller.nbc_wrapper
     hsmm_wrapper = controller.hsmm_wrapper
+    nbc_wrapper = hsmm_wrapper.autoencoder_wrapper.nbc_wrapper
     eval = OddManOut(nbc_wrapper, hsmm_wrapper)
     eval.answers[qidx] = answer
     eval.update_answers()
@@ -74,12 +67,11 @@ def get_sessions():
 
 @app.route('/get_encodings')
 def get_encodings():
-    if controller.nbc_wrapper is None:
-        return 'na'
     global args
     assert args is not None
     session = request.args.get('session')
-    nbc_wrapper = controller.nbc_wrapper
+    hsmm_wrapper = controller.hsmm_wrapper
+    nbc_wrapper = hsmm_wrapper.autoencoder_wrapper.nbc_wrapper
     data = controller.get_encodings(args, session=session, type='dev')
     pal = sns.color_palette('hls', data['label'].max() + 1).as_hex()
     data['x'] = data.apply(lambda row: row['encoding'][0], axis=1)
@@ -97,8 +89,9 @@ def get_encodings():
 @app.route('/get_encoding_by_idx')
 def get_encoding_by_idx():
     #get encoding by index
-    nbc = controller.nbc
-    nbc_wrapper = controller.nbc_wrapper
+    hsmm_wrapper = controller.hsmm_wrapper
+    nbc_wrapper = hsmm_wrapper.autoencoder_wrapper.nbc_wrapper
+    nbc = None
     if nbc is not None:
         idx = int(request.args.get('idx'))
         keys = list(nbc.steps['dev'].keys())

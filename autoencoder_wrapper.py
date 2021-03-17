@@ -25,10 +25,11 @@ class AutoencoderWrapper:
         parser.add_argument('--vae_beta', type=int, default=10)
         parser.add_argument('--vae_warm_up_iters', type=int, default=1000)
 
-    def __init__(self, args, nbc_wrapper):
+    def __init__(self, args):
         self.args = args
-        self.nbc_wrapper = nbc_wrapper
-        self.x = nbc_wrapper.x
+        self.nbc_args = config.deserialize(args.input_config)
+        self.nbc_wrapper = NBCWrapper(self.nbc_args)
+        self.x = self.nbc_wrapper.x
         self.get_autoencoder()
 
     def try_load_cached(self, load_model=False):
@@ -74,8 +75,7 @@ class AutoencoderWrapper:
         print('cached autoencoder')
 
     def train_autoencoder(self):
-        nbc_wrapper_trim = NBCWrapper(self.args, True)
-        x = nbc_wrapper_trim.x
+        x = self.nbc_wrapper.x_trim
         _, seq_len, input_dim = x['train'].shape
         train_dset = tf.data.Dataset.from_tensor_slices(x['train']).batch(self.args.vae_batch_size)
         dev_dset = tf.data.Dataset.from_tensor_slices(x['dev']).batch(self.args.vae_batch_size)

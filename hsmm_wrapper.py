@@ -16,6 +16,7 @@ NBC_ROOT = os.environ['NBC_ROOT']
 sys.path.append(NBC_ROOT)
 import config
 from nbc import NBC
+from autoencoder_wrapper import AutoencoderWrapper
 
 class SemiMarkovDataset(torch.utils.data.Dataset):
     def __init__(self, features, lengths, device):
@@ -62,24 +63,17 @@ def viz(pred):
     plt.show()
 
 class HSMMWrapper:
-    def __init__(self, args, nbc=None, steps=None, autoencoder_wrapper=None, device='cpu'):
+    def __init__(self, args, device='cpu'):
         self.args = args
-        self.args.sm_debug = True
-        self.args.sm_supervised = False
+        if args.input_module['type'] == 'autoencoder':
+            autoencoder_args = config.deserialize(args.input_module['config'])
+            self.autoencoder_wrapper =  AutoencoderWrapper(autoencoder_args)
+            self.steps = self.autoencoder_wrapper.nbc_wrapper.nbc.steps
         self.device = torch.device(device)
-        if nbc is not None:
-            self.direct = True
-            self.nbc = nbc
-            self.prepare_direct_inputs()
-        else:
-            assert steps is not None and autoencoder_wrapper is not None
-            self.direct = False
-            self.steps = steps
-            self.autoencoder_wrapper = autoencoder_wrapper
-            self.prepare_data()
         self.get_hsmm()
 
     def get_hsmm(self):
+        self.prepare_autoencoder_inputs()
         if self.try_load_cached():
             return
         self.train()
@@ -89,10 +83,7 @@ class HSMMWrapper:
         self.cache()
 
     def try_load_cached(self, load_model=False):
-        if self.direct:
-            savefile = config.find_savefile(self.args, 'hsmm_direct')
-        else:
-            savefile = config.find_savefile(self.args, 'hsmm')
+        savefile = config.find_savefile(self.args, 'hsmm')
         if savefile is None:
             return False
         weights_path = NBC_ROOT + 'cache/hsmm/{}_weights.pt'.format(savefile)
@@ -108,10 +99,7 @@ class HSMMWrapper:
         return True
 
     def cache(self):
-        if self.direct:
-            savefile = config.generate_savefile(self.args, 'hsmm_direct')
-        else:
-            savefile = config.generate_savefile(self.args, 'hsmm')
+        savefile = config.generate_savefile(self.args, 'hsmm')
         weights_path = NBC_ROOT + 'cache/hsmm/{}_weights.pt'.format(savefile)
         predictions_path = NBC_ROOT + 'cache/hsmm/{}_predictions.json'.format(savefile)
         torch.save(self.model.state_dict(), weights_path)
@@ -119,7 +107,7 @@ class HSMMWrapper:
             json.dump(self.predictions, f)
         print('cached hsmm')
 
-    def prepare_data(self):
+    def prepare_autoencoder_inputs(self):
         def aggregate_sessions(z, steps):
             sessions = {}
             for i, (key, steps_) in enumerate(steps):

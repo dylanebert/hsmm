@@ -14,29 +14,17 @@ from nbc import NBC
 from nbc_wrapper import NBCWrapper
 import config
 
-nbc = None
-nbc_wrapper = None
-autoencoder_wrapper = None
 hsmm_wrapper = None
 
-def initialize(args, model, device):
-    global nbc
-    global nbc_wrapper
-    global autoencoder_wrapper
+def initialize(args):
     global hsmm_wrapper
-    if model in ['nbc', 'autoencoder', 'hsmm', 'eval']:
-        nbc_wrapper = NBCWrapper(args)
-    if model in ['autoencoder', 'hsmm', 'eval']:
-        autoencoder_wrapper = AutoencoderWrapper(args, nbc_wrapper)
-    if model in ['hsmm', 'eval']:
-        hsmm_wrapper = HSMMWrapper(args, steps=nbc_wrapper.nbc.steps, autoencoder_wrapper=autoencoder_wrapper, device=device)
-    if model == 'hsmm_direct':
-        nbc = NBC(args)
-        hsmm_wrapper = HSMMWrapper(args, nbc=nbc, device=device)
+    hsmm_wrapper = HSMMWrapper(args)
 
 def get_encodings(args, session, type='train'):
-    global autoencoder_wrapper, hsmm_wrapper
-    assert autoencoder_wrapper is not None and hsmm_wrapper is not None
+    global hsmm_wrapper
+    assert hsmm_wrapper is not None
+    autoencoder_wrapper = hsmm_wrapper.autoencoder_wrapper
+    nbc_wrapper = autoencoder_wrapper.nbc_wrapper
     indices = hsmm_wrapper.sequences[type][2]
     predictions = hsmm_wrapper.predictions[type]
     z = autoencoder_wrapper.reduced_encodings()[type]
@@ -58,8 +46,9 @@ def get_encodings(args, session, type='train'):
     return pd.DataFrame(data)
 
 def get_reconstruction(args, idx, type='train'):
-    global autoencoder_wrapper
-    assert autoencoder_wrapper is not None
+    global hsmm_wrapper
+    assert hsmm_wrapper is not None
+    autoencoder_wrapper = hsmm_wrapper.autoencoder_wrapper
     x = autoencoder_wrapper.x[type][idx]
     x_ = autoencoder_wrapper.reconstructions[type][idx]
     return x, x_
@@ -77,31 +66,24 @@ def get_predictions(args, session=None, type='train'):
         return predictions[session_idx], indices[session_idx]
 
 def get_sessions(type='train'):
-    global nbc
-    global nbc_wrapper
-    if nbc is not None:
-        keys = list(nbc.steps[type].keys())
-        sessions = [key[0] for key in keys]
-    else:
-        assert nbc_wrapper is not None
-        keys = list(nbc_wrapper.nbc.steps[type].keys())
-        sessions = np.unique([key[0] for key in keys]).tolist()
+    global hsmm_wrapper
+    assert hsmm_wrapper is not None
+    autoencoder_wrapper = hsmm_wrapper.autoencoder_wrapper
+    nbc_wrapper = autoencoder_wrapper.nbc_wrapper
+    keys = list(nbc_wrapper.nbc.steps[type].keys())
+    sessions = np.unique([key[0] for key in keys]).tolist()
     return sessions
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='hidden=16')
-    parser.add_argument('--model', type=str, choices=['nbc', 'autoencoder', 'hsmm', 'eval', 'hsmm_direct'], default='autoencoder')
+    parser.add_argument('--config', type=str, required=True)
+    parser.add_argument('--model', type=str, choices=['nbc', 'autoencoder', 'hsmm', 'eval'], default='autoencoder')
     parser.add_argument('--device', type=str, choices=['cpu', 'cuda'], default='cpu')
     cmd_args = parser.parse_args()
     args = config.deserialize(cmd_args.config)
-    initialize(args, cmd_args.model, cmd_args.device)
     if cmd_args.model == 'nbc':
-        print(nbc_wrapper.nbc.steps['train'].items())
-    if cmd_args.model == 'autoencoder':
-        z = autoencoder_wrapper.encodings['train']
-    if cmd_args.model == 'hsmm':
-        pred = hsmm_wrapper.predictions['train']
-    if cmd_args.model == 'eval':
-        eval = OddManOut(nbc_wrapper, hsmm_wrapper)
-        eval.evaluate()
+        nbc_wrapper = NBCWrapper(args)
+    elif cmd_args.model == 'autoencoder':
+        autoencoder_wrapper = AutoencoderWrapper(args)
+    elif cmd_args.model == 'hsmm':
+        hsmm_wrapper = HSMMWrapper(args, device=cmd_args.device)
