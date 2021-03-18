@@ -132,6 +132,9 @@ class AutoencoderWrapper:
 
 class AutoencoderUnifiedCombiner(AutoencoderWrapper):
     def __init__(self, args):
+        nbc_args = config.deserialize(args.input_config[0])
+        self.nbc_wrapper = NBCWrapper(nbc_args)
+
         self.autoencoder_wrapper = AutoencoderWrapper(args)
         assert self.autoencoder_wrapper.try_load_cached(load_model=True)
         self.x = {'train': [], 'dev': [], 'test': []}

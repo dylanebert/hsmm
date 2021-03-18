@@ -77,7 +77,7 @@ class HSMMWrapper:
         elif args.input_module['type'] == 'autoencoder_unified':
             autoencoder_args = config.deserialize(args.input_module['config'])
             self.autoencoder_wrapper = AutoencoderUnifiedCombiner(autoencoder_args)
-            return
+            self.steps = self.autoencoder_wrapper.nbc_wrapper.nbc.steps
         self.device = torch.device(device)
         self.get_hsmm()
 
