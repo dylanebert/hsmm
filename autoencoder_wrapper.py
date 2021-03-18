@@ -212,9 +212,9 @@ class AutoencoderUnifiedCombiner(AutoencoderWrapper):
             z, _ = self.autoencoder_wrapper.vae.encode(max_x)
             x_reconstr = self.autoencoder_wrapper.vae(max_x)
 
-            self.x[type] = max_x
-            self.encodings[type] = z
-            self.reconstructions[type] = x_reconstr
+            self.x[type] = max_x.numpy()
+            self.encodings[type] = z.numpy()
+            self.reconstructions[type] = x_reconstr.numpy()
 
 class AutoencoderMaxWrapper(AutoencoderWrapper):
     def __init__(self, configs, add_indices=False):
