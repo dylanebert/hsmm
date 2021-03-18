@@ -188,17 +188,22 @@ class AutoencoderMaxWrapper(AutoencoderWrapper):
 
 if __name__ == '__main__':
     configs = []
-    for obj in ['Knife', 'Banana', 'Apple', 'Fork', 'Plant', 'Book', 'Spoon', 'Bowl', 'Cup', \
-        'Lamp', 'Ball', 'Bear', 'Toy', 'Doll', 'RightHand', 'LeftHand', 'Head', 'Dinosaur']:
+    for obj in ['Knife', 'Banana', 'Apple', 'Fork', 'Book', 'Spoon', 'Bowl', 'Cup', \
+        'Ball', 'Bear', 'Toy', 'RightHand', 'LeftHand', 'Head']:
         cfg = 'autoencoder_{}'.format(obj)
         configs.append(cfg)
     for cfg in configs:
+        print(cfg)
         args = config.deserialize(cfg)
         autoencoder_wrapper = AutoencoderWrapper(args)
         assert autoencoder_wrapper.try_load_cached(load_model=True)
+        n = autoencoder_wrapper.encodings['train'].shape[0]
+        if n > 10000:
+            continue
+        print(cfg)
         print(autoencoder_wrapper.encodings['train'].shape)
         autoencoder_wrapper.get_encodings()
         print(autoencoder_wrapper.encodings['train'].shape)
-        break
+        autoencoder_wrapper.cache()
     #configs = ['autoencoder_Apple', 'autoencoder_Ball']
     #wrapper = AutoencoderMaxWrapper(configs, add_indices=True)

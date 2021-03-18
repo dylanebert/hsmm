@@ -1,0 +1,12 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 868828
+##  Job Name : hsmm_Plant
+##  Nodelist : node1325
+##      CPUs : 4
+##  Mem/Node : 16384 MB
+## Directory : /gpfs/data/epavlick/debert/hsmm
+##   Started : Wed Mar 17 23:51:36 EDT 2021
+###############################################################################
+hsmm_Plant
+splitting sequences
+featurizing

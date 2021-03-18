@@ -1,0 +1,44 @@
+
+CommandNotFoundError: Your shell has not been properly configured to use 'conda activate'.
+If your shell is Bash or a Bourne variant, enable conda for the current user with
+
+    $ echo ". /gpfs/runtime/opt/anaconda/3-5.2.0/etc/profile.d/conda.sh" >> ~/.bashrc
+
+or, for all users, enable conda with
+
+    $ sudo ln -s /gpfs/runtime/opt/anaconda/3-5.2.0/etc/profile.d/conda.sh /etc/profile.d/conda.sh
+
+The options above will permanently enable the 'conda' command, but they do NOT
+put conda's base (root) environment on PATH.  To do so, run
+
+    $ conda activate
+
+in your terminal, or to put the base environment on PATH permanently, run
+
+    $ echo "conda activate" >> ~/.bashrc
+
+Previous to conda 4.4, the recommended way to activate conda was to modify PATH in
+your ~/.bashrc file.  You should manually remove the line that looks like
+
+    export PATH="/gpfs/runtime/opt/anaconda/3-5.2.0/bin:$PATH"
+
+^^^ The above line should NO LONGER be in your ~/.bashrc file! ^^^
+
+
+2021-03-17 23:45:56.163897: W tensorflow/stream_executor/platform/default/dso_loader.cc:59] Could not load dynamic library 'libcudart.so.10.1'; dlerror: libcudart.so.10.1: cannot open shared object file: No such file or directory; LD_LIBRARY_PATH: /gpfs/runtime/opt/intel/2017.0/lib/intel64:/gpfs/runtime/opt/intel/2017.0/mkl/lib/intel64:/gpfs/runtime/opt/python/2.7.12/lib:/gpfs/runtime/opt/java/8u111/jre/lib/amd64
+2021-03-17 23:45:56.163954: I tensorflow/stream_executor/cuda/cudart_stub.cc:29] Ignore above cudart dlerror if you do not have a GPU set up on your machine.
+  0%|          | 0/20424 [00:00<?, ?it/s]  0%|          | 0/20424 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "controller.py", line 89, in <module>
+    hsmm_wrapper = HSMMWrapper(args, device=cmd_args.device)
+  File "/gpfs/data/epavlick/debert/hsmm/hsmm_wrapper.py", line 70, in __init__
+    self.autoencoder_wrapper =  AutoencoderWrapper(autoencoder_args)
+  File "/gpfs/data/epavlick/debert/hsmm/autoencoder_wrapper.py", line 31, in __init__
+    self.nbc_wrapper = NBCWrapper(self.nbc_args)
+  File "/users/debert/data/datasets/nbc/nbc_wrapper.py", line 15, in __init__
+    self.nbc = NBC(args)
+  File "/users/debert/data/datasets/nbc/nbc.py", line 208, in __init__
+    self.featurize()
+  File "/users/debert/data/datasets/nbc/nbc.py", line 320, in featurize
+    assert feat_.shape[0] == n or feat_.ndim == 1, (feat_.shape, n)
+AssertionError: ((0, 1), 10)

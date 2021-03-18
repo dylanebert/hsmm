@@ -1,0 +1,12 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 868826
+##  Job Name : hsmm_Lamp
+##  Nodelist : node1326
+##      CPUs : 4
+##  Mem/Node : 16384 MB
+## Directory : /gpfs/data/epavlick/debert/hsmm
+##   Started : Wed Mar 17 23:49:55 EDT 2021
+###############################################################################
+hsmm_Lamp
+splitting sequences
+featurizing

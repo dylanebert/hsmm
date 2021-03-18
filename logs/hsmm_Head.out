@@ -1,0 +1,15 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 868824
+##  Job Name : hsmm_Head
+##  Nodelist : node1308
+##      CPUs : 4
+##  Mem/Node : 16384 MB
+## Directory : /gpfs/data/epavlick/debert/hsmm
+##   Started : Wed Mar 17 23:50:01 EDT 2021
+###############################################################################
+hsmm_Head
+loaded cached nbc
+loaded cached autoencoder
+(1, 1, 16)
+(1, 1, 16)
+(1, 1, 16)

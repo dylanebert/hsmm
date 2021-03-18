@@ -1,0 +1,12 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 859746
+##  Job Name : autoencoder_Dinosaur
+##  Nodelist : gpu1414
+##      CPUs : 4
+##  Mem/Node : 16384 MB
+## Directory : /gpfs/data/epavlick/debert/hsmm
+##   Started : Wed Mar 17 18:17:33 EDT 2021
+###############################################################################
+autoencoder_Dinosaur
+splitting sequences
+featurizing

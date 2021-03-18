@@ -1,0 +1,12 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 859747
+##  Job Name : autoencoder_Doll
+##  Nodelist : gpu1414
+##      CPUs : 4
+##  Mem/Node : 16384 MB
+## Directory : /gpfs/data/epavlick/debert/hsmm
+##   Started : Wed Mar 17 18:19:03 EDT 2021
+###############################################################################
+autoencoder_Doll
+splitting sequences
+featurizing

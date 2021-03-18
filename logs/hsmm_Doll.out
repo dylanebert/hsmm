@@ -1,0 +1,12 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 868822
+##  Job Name : hsmm_Doll
+##  Nodelist : node[1301,1314]
+##      CPUs : 4
+##  Mem/Node : 16384 MB
+## Directory : /gpfs/data/epavlick/debert/hsmm
+##   Started : Wed Mar 17 23:47:39 EDT 2021
+###############################################################################
+hsmm_Doll
+splitting sequences
+featurizing
