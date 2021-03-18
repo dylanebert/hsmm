@@ -27,9 +27,26 @@ class AutoencoderWrapper:
 
     def __init__(self, args):
         self.args = args
-        self.nbc_args = config.deserialize(args.input_config)
-        self.nbc_wrapper = NBCWrapper(self.nbc_args)
-        self.x = self.nbc_wrapper.x
+        if isinstance(args.input_config, list):
+            self.x = {'train': [], 'dev': [], 'test': []}
+            self.x_trim = {'train': [], 'dev': [], 'test': []}
+            for cfg in args.input_config:
+                nbc_args = config.deserialize(cfg)
+                nbc_wrapper = NBCWrapper(nbc_args)
+                x = nbc_wrapper.x
+                x_trim = nbc_wrapper.x_trim
+                for type in ['train', 'dev', 'test']:
+                    self.x[type].append(x[type])
+                    self.x_trim[type].append(x_trim[type])
+            for type in ['train', 'dev', 'test']:
+                self.x[type] = np.concatenate(self.x[type], axis=0)
+                self.x_trim[type] = np.concatenate(self.x_trim[type], axis=0)
+        else:
+            assert isinstance(args.input_config, str)
+            nbc_args = config.deserialize(args.input_config)
+            self.nbc_wrapper = NBCWrapper(nbc_args)
+            self.x = self.nbc_wrapper.x
+            self.x_trim = self.nbc_wrapper.x_trim
         self.get_autoencoder()
 
     def try_load_cached(self, load_model=False):
@@ -44,7 +61,7 @@ class AutoencoderWrapper:
         if load_model:
             _, seq_len, input_dim = self.x['train'].shape
             self.vae = VAE(seq_len, input_dim, self.args.vae_hidden_size, self.args.vae_beta, self.args.vae_warm_up_iters)
-            self.vae(self.nbc_wrapper.x['train'])
+            self.vae(self.x['train'])
             self.vae.load_weights(weights_path)
         with open(encodings_path) as f:
             self.encodings = json.load(f)
@@ -75,20 +92,19 @@ class AutoencoderWrapper:
         print('cached autoencoder')
 
     def train_autoencoder(self):
-        x = self.nbc_wrapper.x_trim
-        _, seq_len, input_dim = x['train'].shape
-        train_dset = tf.data.Dataset.from_tensor_slices(x['train']).batch(self.args.vae_batch_size)
-        dev_dset = tf.data.Dataset.from_tensor_slices(x['dev']).batch(self.args.vae_batch_size)
+        _, seq_len, input_dim = self.x_trim['train'].shape
+        train_dset = tf.data.Dataset.from_tensor_slices(self.x_trim['train']).batch(self.args.vae_batch_size)
+        dev_dset = tf.data.Dataset.from_tensor_slices(self.x_trim['dev']).batch(self.args.vae_batch_size)
 
         self.vae = VAE(seq_len, input_dim, self.args.vae_hidden_size, self.args.vae_beta, self.args.vae_warm_up_iters)
         self.vae.compile(optimizer='adam')
         tmp_path = NBC_ROOT + 'cache/autoencoder/tmp_{}.h5'.format(str(uuid.uuid1()))
         callbacks = [
-            tf.keras.callbacks.EarlyStopping(patience=50, verbose=1),
+            tf.keras.callbacks.EarlyStopping(patience=25, verbose=1),
             tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
         ]
         self.vae.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
-        self.vae(x['train'])
+        self.vae(self.x_trim['train'][:10])
         self.vae.load_weights(tmp_path)
 
     def get_encodings(self):
@@ -104,6 +120,7 @@ class AutoencoderWrapper:
         if self.try_load_cached():
             return
         self.train_autoencoder()
+        self.get_encodings()
         self.cache()
 
     def reduced_encodings(self):
@@ -113,24 +130,36 @@ class AutoencoderWrapper:
             encodings[type] = reducer.transform(self.encodings[type])
         return encodings
 
-class AutoencoderConcatWrapper(AutoencoderWrapper):
-    def __init__(self, configs):
-        print('concatenating autoencoder encodings')
+class AutoencoderUnifiedCombiner(AutoencoderWrapper):
+    def __init__(self, args):
+        self.autoencoder_wrapper = AutoencoderWrapper(args)
+        assert self.autoencoder_wrapper.try_load_cached(load_model=True)
         self.x = {'train': [], 'dev': [], 'test': []}
-        self.encodings = {'train': [], 'dev': [], 'test': []}
-        self.reconstructions = {'train': [], 'dev': [], 'test': []}
-        for cfg in configs:
-            args = config.deserialize(cfg)
-            nw = NBCWrapper(args)
-            aw = AutoencoderWrapper(args, nw)
+        for cfg in args.input_config:
+            print(cfg)
+            nbc_args = config.deserialize(cfg)
+            nbc_wrapper = NBCWrapper(nbc_args)
             for type in ['train', 'dev', 'test']:
-                self.x[type].append(aw.x[type])
-                self.encodings[type].append(aw.encodings[type])
-                self.reconstructions[type].append(aw.reconstructions[type])
+                self.x[type].append(nbc_wrapper.x[type])
+
+        self.encodings = {}
+        self.reconstructions = {}
         for type in ['train', 'dev', 'test']:
-            self.x[type] = np.concatenate(self.x[type], axis=-1)
-            self.encodings[type] = np.concatenate(self.encodings[type], axis=-1)
-            self.reconstructions[type] = np.concatenate(self.reconstructions[type], axis=-1)
+            x = np.stack(self.x[type], axis=1)
+            magnitudes = np.linalg.norm(x, axis=(2, 3))
+            max_indices = np.argmax(magnitudes, axis=1)
+            print(np.unique(max_indices, return_counts=True)[1])
+            max_x = []
+            for i in range(x.shape[0]):
+                max_x.append(x[i, max_indices[i], :])
+            max_x = np.array(max_x)
+            z, _ = self.autoencoder_wrapper.vae.encode(max_x)
+            x_reconstr = self.autoencoder_wrapper.vae(max_x)
+
+            self.x[type] = max_x
+            self.encodings[type] = z
+            self.reconstructions[type] = x_reconstr
+
 
 class AutoencoderMaxWrapper(AutoencoderWrapper):
     def __init__(self, configs, add_indices=False):
@@ -149,7 +178,6 @@ class AutoencoderMaxWrapper(AutoencoderWrapper):
                 self.encodings[type].append(aw.encodings[type])
                 self.reconstructions[type].append(aw.reconstructions[type])
         for type in ['train', 'dev', 'test']:
-            print([x.shape for x in self.x[type]])
             x = np.stack(self.x[type], axis=1)
             encodings = np.stack(self.encodings[type], axis=1)
             reconstr = np.stack(self.reconstructions[type], axis=1)
@@ -174,8 +202,6 @@ class AutoencoderMaxWrapper(AutoencoderWrapper):
                     one_hot.append(vec)
                 one_hot = np.array(one_hot)
                 max_encodings = np.concatenate((max_encodings, one_hot), axis=-1)
-                print(max_encodings.shape)
-
 
             max_x = np.array(max_x)
             max_encodings = np.array(max_encodings)
@@ -187,23 +213,5 @@ class AutoencoderMaxWrapper(AutoencoderWrapper):
 
 
 if __name__ == '__main__':
-    configs = []
-    for obj in ['Knife', 'Banana', 'Apple', 'Fork', 'Book', 'Spoon', 'Bowl', 'Cup', \
-        'Ball', 'Bear', 'Toy', 'RightHand', 'LeftHand', 'Head']:
-        cfg = 'autoencoder_{}'.format(obj)
-        configs.append(cfg)
-    for cfg in configs:
-        print(cfg)
-        args = config.deserialize(cfg)
-        autoencoder_wrapper = AutoencoderWrapper(args)
-        assert autoencoder_wrapper.try_load_cached(load_model=True)
-        n = autoencoder_wrapper.encodings['train'].shape[0]
-        if n > 10000:
-            continue
-        print(cfg)
-        print(autoencoder_wrapper.encodings['train'].shape)
-        autoencoder_wrapper.get_encodings()
-        print(autoencoder_wrapper.encodings['train'].shape)
-        autoencoder_wrapper.cache()
-    #configs = ['autoencoder_Apple', 'autoencoder_Ball']
-    #wrapper = AutoencoderMaxWrapper(configs, add_indices=True)
+    args = config.deserialize('autoencoder_objs')
+    wrapper = AutoencoderWrapper(args)

@@ -16,7 +16,7 @@ NBC_ROOT = os.environ['NBC_ROOT']
 sys.path.append(NBC_ROOT)
 import config
 from nbc import NBC
-from autoencoder_wrapper import AutoencoderWrapper, AutoencoderMaxWrapper
+from autoencoder_wrapper import AutoencoderWrapper, AutoencoderMaxWrapper, AutoencoderUnifiedCombiner
 
 class SemiMarkovDataset(torch.utils.data.Dataset):
     def __init__(self, features, lengths, device):
@@ -74,6 +74,10 @@ class HSMMWrapper:
             add_indices = args.input_module['add_indices']
             self.autoencoder_wrapper = AutoencoderMaxWrapper(configs, add_indices=add_indices)
             self.steps = self.autoencoder_wrapper.nbc_wrapper.nbc.steps
+        elif args.input_module['type'] == 'autoencoder_unified':
+            autoencoder_args = config.deserialize(args.input_module['config'])
+            self.autoencoder_wrapper = AutoencoderUnifiedCombiner(autoencoder_args)
+            return
         self.device = torch.device(device)
         self.get_hsmm()
 
@@ -115,6 +119,8 @@ class HSMMWrapper:
     def prepare_autoencoder_inputs(self):
         def aggregate_sessions(z, steps):
             sessions = {}
+            print(z.shape)
+            print(len(steps))
             for i, (key, steps_) in enumerate(steps):
                 session = key[0]
                 feat = z[i]
@@ -296,6 +302,5 @@ class HSMMWrapper:
             print('{}\n{}\n'.format(param, params[param]))
 
 if __name__ == '__main__':
-    args = config.deserialize('apple_motion')
-    nbc = NBC(args)
-    HSMMWrapper(args, nbc=nbc, device='cuda')
+    args = config.deserialize('hsmm_objs')
+    HSMMWrapper(args, device='cuda')
