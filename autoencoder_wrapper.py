@@ -134,7 +134,59 @@ class AutoencoderUnifiedCombiner(AutoencoderWrapper):
     def __init__(self, args):
         nbc_args = config.deserialize(args.input_config[0])
         self.nbc_wrapper = NBCWrapper(nbc_args)
+        self.load()
 
+    def load(self):
+        if self.try_load_cached():
+            return
+        self.get_encodings()
+        self.cache()
+
+    def try_load_cached(self):
+        savefile = config.find_savefile(self.args, 'autoencoder')
+        if savefile is None:
+            return False
+        input_path = NBC_ROOT + 'cache/autoencoder/{}_unified_inputs.json'.format(savefile)
+        encodings_path = NBC_ROOT + 'cache/autoencoder/{}_unified_encodings.json'.format(savefile)
+        reconstructions_path = NBC_ROOT + 'cache/autoencoder/{}_unified_reconstructions.json'.format(savefile)
+        if not os.path.exists(input_path) or not os.path.exists(encodings_path) or not os.path.exists(reconstructions_path):
+            return False
+        with open(input_path) as f:
+            self.x = json.load(f)
+        with open(encodings_path) as f:
+            self.encodings = json.load(f)
+        with open(reconstructions_path) as f:
+            self.reconstructions = json.load(f)
+        for type in ['train', 'dev', 'test']:
+            self.x[type] = np.array(self.x[type])
+            self.encodings[type] = np.array(self.encodings[type])
+            self.reconstructions[type] = np.array(self.reconstructions[type])
+        print('loaded cached autoencoder unified wrapper')
+        return True
+
+    def cache(self):
+        savefile = config.generate_savefile(self.args, 'autoencoder')
+        input_path = NBC_ROOT + 'cache/autoencoder/{}_unified_inputs.json'.format(savefile)
+        encodings_path = NBC_ROOT + 'cache/autoencoder/{}_unified_encodings.json'.format(savefile)
+        reconstructions_path = NBC_ROOT + 'cache/autoencoder/{}_unified_reconstructions.json'.format(savefile)
+        with open(input_path, 'w+') as f:
+            serialized = {}
+            for type in ['train', 'dev', 'test']:
+                serialized[type] = self.x[type].tolist()
+            json.dump(serialized, f)
+        with open(encodings_path, 'w+') as f:
+            serialized = {}
+            for type in ['train', 'dev', 'test']:
+                serialized[type] = self.encodings[type].tolist()
+            json.dump(serialized, f)
+        with open(reconstructions_path, 'w+') as f:
+            serialized = {}
+            for type in ['train', 'dev', 'test']:
+                serialized[type] = self.reconstructions[type].tolist()
+            json.dump(serialized, f)
+        print('cached autoencoder unified wrapper')
+
+    def get_encodings(self):
         self.autoencoder_wrapper = AutoencoderWrapper(args)
         assert self.autoencoder_wrapper.try_load_cached(load_model=True)
         self.x = {'train': [], 'dev': [], 'test': []}
@@ -162,7 +214,6 @@ class AutoencoderUnifiedCombiner(AutoencoderWrapper):
             self.x[type] = max_x
             self.encodings[type] = z
             self.reconstructions[type] = x_reconstr
-
 
 class AutoencoderMaxWrapper(AutoencoderWrapper):
     def __init__(self, configs, add_indices=False):
