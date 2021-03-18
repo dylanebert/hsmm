@@ -132,6 +132,7 @@ class AutoencoderWrapper:
 
 class AutoencoderUnifiedCombiner(AutoencoderWrapper):
     def __init__(self, args):
+        self.args = args
         nbc_args = config.deserialize(args.input_config[0])
         self.nbc_wrapper = NBCWrapper(nbc_args)
         self.load()
@@ -268,4 +269,4 @@ class AutoencoderMaxWrapper(AutoencoderWrapper):
 
 if __name__ == '__main__':
     args = config.deserialize('autoencoder_objs')
-    wrapper = AutoencoderWrapper(args)
+    wrapper = AutoencoderUnifiedCombiner(args)
