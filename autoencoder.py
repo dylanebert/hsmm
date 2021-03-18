@@ -25,7 +25,7 @@ class VAE(tf.keras.models.Model):
             tf.keras.layers.Input(shape=(hidden_dim,)),
             tf.keras.layers.RepeatVector(seq_len),
             tf.keras.layers.LSTM(hidden_dim, return_sequences=True),
-            tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(input_dim, activation='sigmoid'))
+            tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(input_dim, activation='tanh'))
         ])
         self.train_loss = tf.keras.metrics.Mean(name='train_loss')
         self.train_reconstr_loss = tf.keras.metrics.Mean(name='reconstr_loss')

@@ -212,7 +212,7 @@ class AutoencoderUnifiedCombiner(AutoencoderWrapper):
             z, _ = self.autoencoder_wrapper.vae.encode(max_x)
             x_reconstr = self.autoencoder_wrapper.vae(max_x)
 
-            self.x[type] = max_x.numpy()
+            self.x[type] = max_x
             self.encodings[type] = z.numpy()
             self.reconstructions[type] = x_reconstr.numpy()
 
@@ -268,5 +268,7 @@ class AutoencoderMaxWrapper(AutoencoderWrapper):
 
 
 if __name__ == '__main__':
-    args = config.deserialize('autoencoder_objs')
-    wrapper = AutoencoderUnifiedCombiner(args)
+    args = config.deserialize('autoencoder_Apple')
+    wrapper = AutoencoderWrapper(args)
+    #args = config.deserialize('autoencoder_objs')
+    #wrapper = AutoencoderUnifiedCombiner(args)
