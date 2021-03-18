@@ -91,6 +91,7 @@ class AutoencoderWrapper:
         self.vae(x['train'])
         self.vae.load_weights(tmp_path)
 
+    def get_encodings(self):
         self.encodings = {}
         self.reconstructions = {}
         for type in ['train', 'dev', 'test']:
@@ -133,19 +134,22 @@ class AutoencoderConcatWrapper(AutoencoderWrapper):
 
 class AutoencoderMaxWrapper(AutoencoderWrapper):
     def __init__(self, configs, add_indices=False):
+        args = config.deserialize(configs[0])
+        self.nbc_wrapper = AutoencoderWrapper(args).nbc_wrapper
+
         print('getting max autoencoder encodings')
         self.x = {'train': [], 'dev': [], 'test': []}
         self.encodings = {'train': [], 'dev': [], 'test': []}
         self.reconstructions = {'train': [], 'dev': [], 'test': []}
         for cfg in configs:
             args = config.deserialize(cfg)
-            nw = NBCWrapper(args)
-            aw = AutoencoderWrapper(args, nw)
+            aw = AutoencoderWrapper(args)
             for type in ['train', 'dev', 'test']:
                 self.x[type].append(aw.x[type])
                 self.encodings[type].append(aw.encodings[type])
                 self.reconstructions[type].append(aw.reconstructions[type])
         for type in ['train', 'dev', 'test']:
+            print([x.shape for x in self.x[type]])
             x = np.stack(self.x[type], axis=1)
             encodings = np.stack(self.encodings[type], axis=1)
             reconstr = np.stack(self.reconstructions[type], axis=1)
@@ -183,5 +187,18 @@ class AutoencoderMaxWrapper(AutoencoderWrapper):
 
 
 if __name__ == '__main__':
-    configs = ['hsmm_Apple_cov=0.1', 'hsmm_Ball_cov=0.1', 'hsmm_Banana_cov=1.0']
-    wrapper = AutoencoderMaxWrapper(configs, add_indices=True)
+    configs = []
+    for obj in ['Knife', 'Banana', 'Apple', 'Fork', 'Plant', 'Book', 'Spoon', 'Bowl', 'Cup', \
+        'Lamp', 'Ball', 'Bear', 'Toy', 'Doll', 'RightHand', 'LeftHand', 'Head', 'Dinosaur']:
+        cfg = 'autoencoder_{}'.format(obj)
+        configs.append(cfg)
+    for cfg in configs:
+        args = config.deserialize(cfg)
+        autoencoder_wrapper = AutoencoderWrapper(args)
+        assert autoencoder_wrapper.try_load_cached(load_model=True)
+        print(autoencoder_wrapper.encodings['train'].shape)
+        autoencoder_wrapper.get_encodings()
+        print(autoencoder_wrapper.encodings['train'].shape)
+        break
+    #configs = ['autoencoder_Apple', 'autoencoder_Ball']
+    #wrapper = AutoencoderMaxWrapper(configs, add_indices=True)

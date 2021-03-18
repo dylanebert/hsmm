@@ -16,7 +16,7 @@ NBC_ROOT = os.environ['NBC_ROOT']
 sys.path.append(NBC_ROOT)
 import config
 from nbc import NBC
-from autoencoder_wrapper import AutoencoderWrapper
+from autoencoder_wrapper import AutoencoderWrapper, AutoencoderMaxWrapper
 
 class SemiMarkovDataset(torch.utils.data.Dataset):
     def __init__(self, features, lengths, device):
@@ -68,6 +68,11 @@ class HSMMWrapper:
         if args.input_module['type'] == 'autoencoder':
             autoencoder_args = config.deserialize(args.input_module['config'])
             self.autoencoder_wrapper =  AutoencoderWrapper(autoencoder_args)
+            self.steps = self.autoencoder_wrapper.nbc_wrapper.nbc.steps
+        elif args.input_module['type'] == 'autoencoder_max':
+            configs = args.input_module['configs']
+            add_indices = args.input_module['add_indices']
+            self.autoencoder_wrapper = AutoencoderMaxWrapper(configs, add_indices=add_indices)
             self.steps = self.autoencoder_wrapper.nbc_wrapper.nbc.steps
         self.device = torch.device(device)
         self.get_hsmm()
