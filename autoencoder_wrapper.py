@@ -188,7 +188,7 @@ class AutoencoderUnifiedCombiner(AutoencoderWrapper):
         print('cached autoencoder unified wrapper')
 
     def get_encodings(self):
-        self.autoencoder_wrapper = AutoencoderWrapper(args)
+        self.autoencoder_wrapper = AutoencoderWrapper(self.args)
         assert self.autoencoder_wrapper.try_load_cached(load_model=True)
         self.x = {'train': [], 'dev': [], 'test': []}
         for cfg in args.input_config:
@@ -268,7 +268,6 @@ class AutoencoderMaxWrapper(AutoencoderWrapper):
 
 
 if __name__ == '__main__':
-    args = config.deserialize('autoencoder_Apple')
-    wrapper = AutoencoderWrapper(args)
-    #args = config.deserialize('autoencoder_objs')
-    #wrapper = AutoencoderUnifiedCombiner(args)
+    args = config.deserialize('autoencoder_objs')
+    #wrapper = AutoencoderWrapper(args)
+    wrapper = AutoencoderUnifiedCombiner(args)
