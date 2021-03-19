@@ -27,10 +27,10 @@ class AutoencoderWrapper:
 
     def __init__(self, args):
         self.args = args
-        if isinstance(args.input_config, list):
+        if isinstance(self.args.input_config, list):
             self.x = {'train': [], 'dev': [], 'test': []}
             self.x_trim = {'train': [], 'dev': [], 'test': []}
-            for cfg in args.input_config:
+            for cfg in self.args.input_config:
                 nbc_args = config.deserialize(cfg)
                 nbc_wrapper = NBCWrapper(nbc_args)
                 x = nbc_wrapper.x
@@ -42,8 +42,8 @@ class AutoencoderWrapper:
                 self.x[type] = np.concatenate(self.x[type], axis=0)
                 self.x_trim[type] = np.concatenate(self.x_trim[type], axis=0)
         else:
-            assert isinstance(args.input_config, str)
-            nbc_args = config.deserialize(args.input_config)
+            assert isinstance(self.args.input_config, str)
+            nbc_args = config.deserialize(self.args.input_config)
             self.nbc_wrapper = NBCWrapper(nbc_args)
             self.x = self.nbc_wrapper.x
             self.x_trim = self.nbc_wrapper.x_trim
@@ -133,7 +133,7 @@ class AutoencoderWrapper:
 class AutoencoderUnifiedCombiner(AutoencoderWrapper):
     def __init__(self, args):
         self.args = args
-        nbc_args = config.deserialize(args.input_config[0])
+        nbc_args = config.deserialize(self.args.input_config[0])
         self.nbc_wrapper = NBCWrapper(nbc_args)
         self.load()
 
@@ -191,7 +191,7 @@ class AutoencoderUnifiedCombiner(AutoencoderWrapper):
         self.autoencoder_wrapper = AutoencoderWrapper(self.args)
         assert self.autoencoder_wrapper.try_load_cached(load_model=True)
         self.x = {'train': [], 'dev': [], 'test': []}
-        for cfg in args.input_config:
+        for cfg in self.args.input_config:
             print(cfg)
             nbc_args = config.deserialize(cfg)
             nbc_wrapper = NBCWrapper(nbc_args)
