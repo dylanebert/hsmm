@@ -131,11 +131,13 @@ class AutoencoderWrapper:
         return encodings
 
 class AutoencoderUnifiedCombiner(AutoencoderWrapper):
-    def __init__(self, args):
+    def __init__(self, args, add_indices=False):
         self.args = args
         nbc_args = config.deserialize(self.args.input_config[0])
         self.nbc_wrapper = NBCWrapper(nbc_args)
         self.load()
+        if add_indices:
+            self.add_indices()
 
     def load(self):
         if self.try_load_cached():
@@ -144,12 +146,15 @@ class AutoencoderUnifiedCombiner(AutoencoderWrapper):
         self.cache()
 
     def try_load_cached(self):
+        return False
+        #---------
         savefile = config.find_savefile(self.args, 'autoencoder')
         if savefile is None:
             return False
         input_path = NBC_ROOT + 'cache/autoencoder/{}_unified_inputs.json'.format(savefile)
         encodings_path = NBC_ROOT + 'cache/autoencoder/{}_unified_encodings.json'.format(savefile)
         reconstructions_path = NBC_ROOT + 'cache/autoencoder/{}_unified_reconstructions.json'.format(savefile)
+        indices_path = NBC_ROOT + 'cache/autoencoder/{}_unified_indices.json'.format(savefile)
         if not os.path.exists(input_path) or not os.path.exists(encodings_path) or not os.path.exists(reconstructions_path):
             return False
         with open(input_path) as f:
@@ -158,10 +163,13 @@ class AutoencoderUnifiedCombiner(AutoencoderWrapper):
             self.encodings = json.load(f)
         with open(reconstructions_path) as f:
             self.reconstructions = json.load(f)
+        with open(indices_path) as f:
+            self.indices = json.load(f)
         for type in ['train', 'dev', 'test']:
             self.x[type] = np.array(self.x[type])
             self.encodings[type] = np.array(self.encodings[type])
             self.reconstructions[type] = np.array(self.reconstructions[type])
+            self.indices[type] = np.array(self.indices[type])
         print('loaded cached autoencoder unified wrapper')
         return True
 
@@ -170,6 +178,7 @@ class AutoencoderUnifiedCombiner(AutoencoderWrapper):
         input_path = NBC_ROOT + 'cache/autoencoder/{}_unified_inputs.json'.format(savefile)
         encodings_path = NBC_ROOT + 'cache/autoencoder/{}_unified_encodings.json'.format(savefile)
         reconstructions_path = NBC_ROOT + 'cache/autoencoder/{}_unified_reconstructions.json'.format(savefile)
+        indices_path = NBC_ROOT + 'cache/autoencoder/{}_unified_indices.json'.format(savefile)
         with open(input_path, 'w+') as f:
             serialized = {}
             for type in ['train', 'dev', 'test']:
@@ -185,7 +194,27 @@ class AutoencoderUnifiedCombiner(AutoencoderWrapper):
             for type in ['train', 'dev', 'test']:
                 serialized[type] = self.reconstructions[type].tolist()
             json.dump(serialized, f)
+        with open(indices_path, 'w+') as f:
+            serialized = {}
+            for type in ['train', 'dev', 'test']:
+                serialized[type] = self.indices[type].tolist()
+            json.dump(serialized, f)
         print('cached autoencoder unified wrapper')
+
+    def add_indices(self):
+        n_objs = len(self.args.input_config)
+        for type in ['train', 'dev', 'test']:
+            one_hot = []
+            for i in range(self.encodings[type].shape[0]):
+                vec = np.zeros((n_objs,))
+                if np.linalg.norm(self.x[type][i]) > 0:
+                    vec[self.max_indices[type][i]] = 1
+                one_hot.append(vec)
+            one_hot = np.array(one_hot)
+            print(self.encodings[type].shape, one_hot.shape)
+            self.encodings[type] = np.concatenate((self.encodings[type], one_hot), axis=-1)
+            print(self.encodings[type].shape)
+            print(self.encodings[type][0])
 
     def get_encodings(self):
         self.autoencoder_wrapper = AutoencoderWrapper(self.args)
@@ -209,12 +238,13 @@ class AutoencoderUnifiedCombiner(AutoencoderWrapper):
             for i in range(x.shape[0]):
                 max_x.append(x[i, max_indices[i], :])
             max_x = np.array(max_x)
-            z, _ = self.autoencoder_wrapper.vae.encode(max_x)
-            x_reconstr = self.autoencoder_wrapper.vae(max_x)
+            z = self.autoencoder_wrapper.vae.encode(max_x)[0].numpy()
+            x_reconstr = self.autoencoder_wrapper.vae(max_x).numpy()
 
             self.x[type] = max_x
-            self.encodings[type] = z.numpy()
-            self.reconstructions[type] = x_reconstr.numpy()
+            self.encodings[type] = z
+            self.reconstructions[type] = x_reconstr
+            self.max_indices[type] = max_indices
 
 class AutoencoderMaxWrapper(AutoencoderWrapper):
     def __init__(self, configs, add_indices=False):
@@ -270,4 +300,4 @@ class AutoencoderMaxWrapper(AutoencoderWrapper):
 if __name__ == '__main__':
     args = config.deserialize('autoencoder_hands')
     #wrapper = AutoencoderWrapper(args)
-    wrapper = AutoencoderUnifiedCombiner(args)
+    wrapper = AutoencoderUnifiedCombiner(args, add_indices=True)
