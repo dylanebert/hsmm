@@ -268,6 +268,6 @@ class AutoencoderMaxWrapper(AutoencoderWrapper):
 
 
 if __name__ == '__main__':
-    args = config.deserialize('autoencoder_objs')
+    args = config.deserialize('autoencoder_hands')
     #wrapper = AutoencoderWrapper(args)
     wrapper = AutoencoderUnifiedCombiner(args)
