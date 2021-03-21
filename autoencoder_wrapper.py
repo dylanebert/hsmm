@@ -50,6 +50,7 @@ class AutoencoderWrapper:
         self.get_autoencoder()
 
     def try_load_cached(self, load_model=False):
+        print(self.args)
         savefile = config.find_savefile(self.args, 'autoencoder')
         if savefile is None:
             return False
