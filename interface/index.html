@@ -100,38 +100,24 @@ function updateChart(session) {
                 var idx = activePoints[0]._index
                 var dset_idx = dsetIndices[idx]._datasetIndex
                 var elem = encodingChart.data.datasets[dset_idx].data[idx]
-                updateEncoding(elem)
+                updateVideo(elem.start_step, elem.end_step, elem.timestamp)
             }
         })
-        $('#right').html(`<h4>Select encoding to view reconstruction</h4>`)
+        $('#right').html(``)
     })
 }
 
-function updateEncoding(elem) {
-    $('#right').html(`
-        <h4 id="right-header">Loading reconstruction...</h4>
-    `)
-    $.get('http://localhost:5000/get_encoding_by_idx?idx=' + elem.idx, function(res) {
-        var data = $.parseJSON(res)
-        $('#right-header').text('Start: ' + data.start_step + ', End: ' + data.end_step)
-        var vid = document.getElementById('vid')
-        vid.play()
-        vid.pause()
-        vid.currentTime = data.timestamp
-        if('data' in data) {
-            $('#right').append(`<canvas id="reconstruction-viz"></canvas>`)
-            var reconstrCtx = $('#reconstruction-viz')
-            var reconstrChart = new Chart(reconstrCtx, {
-                type: 'line',
-                data: data.data
-            })
-        }
-    })
+function updateVideo(start_step, end_step, timestamp) {
+    $('#right-header').text('Start: ' + start_step + ', End: ' + end_step)
+    var vid = document.getElementById('vid')
+    vid.play()
+    vid.pause()
+    vid.currentTime = timestamp
 }
 
 function updateTimeline(session) {
     $('#mid').html(`<p>Loading predictions...</p>`)
-    $.get('http://localhost:5000/get_hsmm_predictions?session=' + session, function(res) {
+    $.get('http://localhost:5000/get_predictions?session=' + session, function(res) {
         var data = $.parseJSON(res)
         $('#mid').html(`<canvas id="timeline"></canvas>`)
         var ctx = $('#timeline')
@@ -158,7 +144,7 @@ function updateTimeline(session) {
                     callbacks: {
                         label: function(tooltipItem, data) {
                             var elem = data.datasets[tooltipItem.datasetIndex]
-                            return elem.idx
+                            return elem.start_step + ' - ' + elem.end_step
                         },
                         title: function(tooltipItem, data) {
                             return ''
@@ -175,7 +161,7 @@ function updateTimeline(session) {
                 var idx = activePoints[0]._index
                 var dset_idx = dsetIndices[idx]._datasetIndex
                 var elem = timelineChart.data.datasets[dset_idx]
-                updateEncoding(elem)
+                updateVideo(elem.start_step, elem.end_step, elem.timestamp)
             }
         })
     })
@@ -191,6 +177,11 @@ ipc.on('loadConfig', (e, fpath) => {
             updateSessions()
         }
     })
+})
+$.get('http://localhost:5000/load_config?fpath=hsmm_default', function(res) {
+    if(res == 'success') {
+        updateSessions()
+    }
 })
 </script>
 </html>

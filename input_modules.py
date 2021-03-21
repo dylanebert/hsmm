@@ -5,6 +5,7 @@ import json
 import ast
 import tensorflow as tf
 import uuid
+from sklearn import preprocessing
 
 assert 'HSMM_ROOT' in os.environ, 'set HSMM_ROOT'
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
@@ -14,10 +15,6 @@ sys.path.append(NBC_ROOT)
 from nbc import NBC
 from autoencoder import VAE
 
-class Args:
-    def __init__(self):
-        return
-
 '''
 base class for hsmm input
 required attributes:
@@ -26,8 +23,14 @@ required attributes:
     lengths: length of each sequence (for padded sequences)
 '''
 class InputModule:
-    def __init__(self, args):
-        self.fname = 'empty'
+    def __init__(self, config_path):
+        self.config_path = config_path
+        with open(NBC_ROOT + 'config/{}.json'.format(config_path)) as f:
+            config = json.load(f)
+        module = expand(config)
+        self.z = module.z
+        self.steps = module.steps
+        self.lengths = module.lengths
 
     def load(self):
         savepath = NBC_ROOT + 'cache/input_modules/{}.json'.format(self.fname)
@@ -75,6 +78,7 @@ class DirectInputModule(InputModule):
         }
 
     def __init__(self, obj):
+        self.obj = obj
         self.fname = 'direct_inputs_{}'.format(obj)
         if self.load():
             return
@@ -128,6 +132,7 @@ class NBCChunks(InputModule):
         }
 
     def __init__(self, obj):
+        self.obj = obj
         self.fname = 'nbc_chunks_{}'.format(obj)
         if self.load():
             return
@@ -154,6 +159,7 @@ trim zeros from child
 '''
 class Trim(InputModule):
     def __init__(self, input_module):
+        self.input_module = input_module
         self.fname = '{}_trim'.format(input_module.fname)
         z = {'train': [], 'dev': [], 'test': []}
         lengths = {'train': [], 'dev': [], 'test': []}
@@ -173,16 +179,16 @@ class Trim(InputModule):
         self.steps = steps
 
 '''
-decorator input
+decorator
 ---
 use vae to encode input to lower dimension
-child must be
+requires child for inference and child for training
 '''
 class Autoencoder(InputModule):
     def __init__(self, train_module, inference_module):
-        self.fname = 'autoencoder_{}_{}'.format(train_module.fname, inference_module.fname)
         self.train_module = train_module
         self.inference_module = inference_module
+        self.fname = 'autoencoder_{}_{}'.format(train_module.fname, inference_module.fname)
         if self.load():
             return
         train_dset = tf.data.Dataset.from_tensor_slices(train_module.z['train']).batch(16)
@@ -208,10 +214,7 @@ class Autoencoder(InputModule):
             self.z[type] = z
             self.lengths[type] = np.ones((z.shape[0],))
             self.reconstructions[type] = x_
-        self.steps = {'train': {}, 'dev': {}, 'test': {}}
-        for type in ['train', 'dev', 'test']:
-            for key, steps in inference_module.steps[type].items():
-                self.steps[type][key] = np.array([steps[0]], dtype=int)
+        self.steps = inference_module.steps
         self.save()
 
     def save(self):
@@ -231,26 +234,139 @@ class Autoencoder(InputModule):
             return True
         return False
 
+'''
+decorator
+---
+convert data to session sequences
+'''
+class ConvertToSessions(InputModule):
+    def __init__(self, input_module):
+        self.fname = '{}_to_sessions'.format(input_module.fname)
+        self.child = input_module
+        sessions = {'train': {}, 'dev': {}, 'test': {}}
+        for type in ['train', 'dev', 'test']:
+            for i, (key, steps) in enumerate(input_module.steps[type].items()):
+                session = key[0]
+                if session not in sessions[type]:
+                    sessions[type][session] = {'z': [], 'steps': [], 'indices': []}
+                sessions[type][session]['z'].append(input_module.z[type][i])
+                sessions[type][session]['steps'].append(steps)
+                sessions[type][session]['indices'].append(i)
+        n_dim = next(iter(sessions['train'].values()))['z'][0].shape[-1]
+        seq_len = 0
+        for type in ['train', 'dev', 'test']:
+            for session in sessions[type].keys():
+                n = len(sessions[type][session]['z'])
+                if n > seq_len:
+                    seq_len = n
+        self.z = {}
+        self.steps = {}
+        self.lengths = {}
+        for type in ['train', 'dev', 'test']:
+            n = len(sessions[type].keys())
+            self.z[type] = np.zeros((n, seq_len, n_dim))
+            self.lengths[type] = np.zeros((n,))
+            self.steps[type] = {}
+            for i, session in enumerate(sessions[type].keys()):
+                z = np.array(sessions[type][session]['z'], dtype=np.float32)
+                steps = np.array(sessions[type][session]['steps'], dtype=int)
+                self.z[type][i, :z.shape[0], :] = z
+                self.lengths[type][i] = z.shape[0]
+                self.steps[type][session] = steps
+
+'''
+decorator
+---
+convert sessions to chunks
+inverse of ConvertToSessions
+'''
+class ConvertToChunks(InputModule):
+    def __init__(self, input_module):
+        self.fname = '{}_to_chunks'.format(input_module.fname)
+        self.z = {'train': [], 'dev': [], 'test': []}
+        self.steps = {'train': {}, 'dev': {}, 'test': {}}
+        self.lengths = {'train': [], 'dev': [], 'test': []}
+        for type in ['train', 'dev', 'test']:
+            for i, key in enumerate(input_module.steps[type].keys()):
+                self.steps[type][key] = []
+                for j in range(int(input_module.lengths[type][i])):
+                    z = input_module.z[type][i,j,:]
+                    steps = input_module.steps[type][key][j]
+                    self.z[type].append(z)
+                    self.lengths[type].append(1)
+                    self.steps[type][key].append(steps)
+                self.steps[type][key] = np.array(self.steps[type][key], dtype=int)
+            self.z[type] = np.array(self.z[type], dtype=np.float32)
+            self.lengths[type] = np.array(self.lengths[type], dtype=int)
+
+'''
+decorator
+---
+standard scale inputs
+'''
+class StandardScale(InputModule):
+    def __init__(self, child):
+        self.fname = '{}_scaled'.format(child.fname)
+        self.child = child
+        self.z = {}
+        scaler = preprocessing.StandardScaler().fit(child.z['train'])
+        for type in ['train', 'dev', 'test']:
+            self.z[type] = scaler.transform(child.z[type])
+        self.steps = child.steps
+        self.lengths = child.lengths
+
+'''
+decorator
+---
+clip child to range [-3, 3]
+'''
+class Clip(InputModule):
+    def __init__(self, child):
+        self.fname = '{}_clip'.format(child.fname)
+        self.child = child
+        self.z = {}
+        for type in ['train', 'dev', 'test']:
+            self.z[type] = np.clip(child.z[type], -3., 3.)
+        self.steps = child.steps
+        self.lengths = child.lengths
+
+'''
+decorator
+---
+apply tanh estimator scaling to child
+'''
+class Tanh(InputModule):
+    def __init__(self, child):
+        self.fname = '{}_tanh'.format(child.fname)
+        self.child = child
+        m = np.mean(child.z['train'], axis=0)
+        std = np.std(child.z['train'], axis=0)
+        self.z = {}
+        for type in ['train', 'dev', 'test']:
+            self.z[type] = .5 * (np.tanh(.01 * ((child.z[type] - m) / std)) + 1)
+        self.steps = child.steps
+        self.lengths = child.lengths
+
 #-----------------------utility functions-----------------------
+class Args:
+    def __init__(self):
+        return
 def serialize_feature(x):
     serialized = {}
     for type in ['train', 'dev', 'test']:
         serialized[type] = x[type].tolist()
     return serialized
-
 def deserialize_feature(serialized):
     x = {}
     for type in ['train', 'dev', 'test']:
         x[type] = np.array(serialized[type])
     return x
-
 def serialize_steps(steps):
     serialized = {'train': {}, 'dev': {}, 'test': {}}
     for type in ['train', 'dev', 'test']:
         for key in steps[type].keys():
             serialized[type][str(key)] = steps[type][key].tolist()
     return serialized
-
 def deserialize_steps(serialized):
     steps = {'train': {}, 'dev': {}, 'test': {}}
     for type in ['train', 'dev', 'test']:
@@ -258,9 +374,31 @@ def deserialize_steps(serialized):
             key_tuple = ast.literal_eval(key)
             steps[type][key_tuple] = np.array(serialized[type][key])
     return steps
+def expand(module_config):
+    #leaves
+    if module_config['type'] == 'NBCChunks':
+        return NBCChunks(module_config['obj'])
+    if module_config['type'] == 'DirectInputModule':
+        return DirectInputModule(module_config['obj'])
+
+    #decorators
+    if module_config['type'] == 'Trim':
+        return Trim(expand(module_config['child']))
+    if module_config['type'] == 'Autoencoder':
+        train_module = expand(module_config['train_module'])
+        inference_module = expand(module_config['inference_module'])
+        return Autoencoder(train_module, inference_module)
+    if module_config['type'] == 'ConvertToSessions':
+        return ConvertToSessions(expand(module_config['child']))
+    if module_config['type'] == 'ConvertToChunks':
+        return ConvertToChunks(expand(module_config['child']))
+    if module_config['type'] == 'StandardScale':
+        return StandardScale(expand(module_config['child']))
+    if module_config['type'] == 'Clip':
+        return Clip(expand(module_config['child']))
+    if module_config['type'] == 'Tanh':
+        return Tanh(expand(module_config['child']))
 
 if __name__ == '__main__':
-    obj = sys.argv[1]
-    velocity = NBCChunks(obj)
-    velocity_trim = Trim(velocity)
-    autoencoder = Autoencoder(velocity_trim, velocity)
+    data = InputModule(NBC_ROOT + 'config/hsmm.json')
+    print(data.z['dev'].shape)
