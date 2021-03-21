@@ -12,7 +12,6 @@ HSMM_ROOT = os.environ['HSMM_ROOT']
 NBC_ROOT = os.environ['NBC_ROOT']
 sys.path.append(NBC_ROOT)
 from nbc import NBC
-from nbc_wrapper import NBCWrapper
 from autoencoder import VAE
 
 class Args:
@@ -28,8 +27,7 @@ required attributes:
 '''
 class InputModule:
     def __init__(self, args):
-        if args.type == 'direct':
-            return
+        self.fname = 'empty'
 
     def load(self):
         savepath = NBC_ROOT + 'cache/input_modules/{}.json'.format(self.fname)
@@ -156,6 +154,7 @@ trim zeros from child
 '''
 class Trim(InputModule):
     def __init__(self, input_module):
+        self.fname = '{}_trim'.format(input_module.fname)
         z = {'train': [], 'dev': [], 'test': []}
         lengths = {'train': [], 'dev': [], 'test': []}
         steps = {'train': {}, 'dev': {}, 'test': {}}
@@ -177,18 +176,18 @@ class Trim(InputModule):
 decorator input
 ---
 use vae to encode input to lower dimension
+child must be
 '''
 class Autoencoder(InputModule):
-    def __init__(self, input_module):
-        assert isinstance(input_module, NBCChunks)
-        self.fname = 'autoencoder_{}'.format(input_module.fname)
-        self.input_module = input_module
+    def __init__(self, train_module, inference_module):
+        self.fname = 'autoencoder_{}_{}'.format(train_module.fname, inference_module.fname)
+        self.train_module = train_module
+        self.inference_module = inference_module
         if self.load():
             return
-        input_module_trim = Trim(input_module)
-        train_dset = tf.data.Dataset.from_tensor_slices(input_module_trim.z['train']).batch(16)
-        dev_dset = tf.data.Dataset.from_tensor_slices(input_module_trim.z['dev']).batch(16)
-        _, seq_len, input_dim = input_module.z['train'].shape
+        train_dset = tf.data.Dataset.from_tensor_slices(train_module.z['train']).batch(16)
+        dev_dset = tf.data.Dataset.from_tensor_slices(train_module.z['dev']).batch(16)
+        _, seq_len, input_dim = train_module.z['train'].shape
         self.vae = VAE(seq_len, input_dim, 8, 1, 10000)
         self.vae.compile(optimizer='adam')
         tmp_path = NBC_ROOT + 'cache/autoencoder/tmp_{}.h5'.format(str(uuid.uuid1()))
@@ -197,21 +196,21 @@ class Autoencoder(InputModule):
             tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
         ]
         self.vae.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
-        self.vae(input_module_trim.z['train'][:10])
+        self.vae(train_module.z['train'][:10])
         self.vae.load_weights(tmp_path)
 
         self.z = {}
         self.lengths = {}
         self.reconstructions = {}
         for type in ['train', 'dev', 'test']:
-            z = self.vae.encode(input_module.z[type])[0].numpy()
-            x_ = self.vae(input_module.z[type]).numpy()
+            z = self.vae.encode(inference_module.z[type])[0].numpy()
+            x_ = self.vae(inference_module.z[type]).numpy()
             self.z[type] = z
             self.lengths[type] = np.ones((z.shape[0],))
             self.reconstructions[type] = x_
         self.steps = {'train': {}, 'dev': {}, 'test': {}}
         for type in ['train', 'dev', 'test']:
-            for key, steps in input_module.steps[type].items():
+            for key, steps in inference_module.steps[type].items():
                 self.steps[type][key] = np.array([steps[0]], dtype=int)
         self.save()
 
@@ -224,9 +223,9 @@ class Autoencoder(InputModule):
         res = super().load()
         if res:
             if load_model:
-                _, seq_len, input_dim = self.input_module.z['train'].shape
+                _, seq_len, input_dim = self.inference_module.z['train'].shape
                 self.vae = VAE(seq_len, input_dim, 8, 1, 10000)
-                self.vae(self.input_module.z['train'][:10])
+                self.vae(self.inference_module.z['train'][:10])
                 weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(self.fname)
                 self.vae.load_weights(weightspath)
             return True
@@ -261,7 +260,7 @@ def deserialize_steps(serialized):
     return steps
 
 if __name__ == '__main__':
-    from nbc import obj_names
-    apple_velocity = NBCChunks('Apple')
-    autoencoder = Autoencoder(apple_velocity)
-    autoencoder.load(load_model=True)
+    obj = sys.argv[1]
+    velocity = NBCChunks(obj)
+    velocity_trim = Trim(velocity)
+    autoencoder = Autoencoder(velocity_trim, velocity)
