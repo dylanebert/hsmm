@@ -134,7 +134,7 @@ class NBCChunks(InputModule):
         if self.load():
             return
         args = Args()
-        for k, v in NBCChunksWrapper.default_args().items():
+        for k, v in NBCChunks.default_args().items():
             setattr(args, k, v)
         feat = ['{}{}'.format(param, obj) for param in ['relVelX:', 'velY:', 'relVelZ:']]
         setattr(args, 'nbc_features', feat)
