@@ -158,20 +158,21 @@ decorator
 trim zeros from child
 '''
 class Trim(InputModule):
-    def __init__(self, input_module):
-        self.input_module = input_module
-        self.fname = '{}_trim'.format(input_module.fname)
+    def __init__(self, conditional, child):
+        self.conditional = conditional
+        self.child = child
+        self.fname = '{}_{}_trim'.format(conditional.fname, child.fname)
         z = {'train': [], 'dev': [], 'test': []}
         lengths = {'train': [], 'dev': [], 'test': []}
         steps = {'train': {}, 'dev': {}, 'test': {}}
         for type in ['train', 'dev', 'test']:
-            keys = list(input_module.steps[type].keys())
+            keys = list(conditional.steps[type].keys())
             for i, key in enumerate(keys):
-                x = input_module.z[type][i]
+                x = conditional.z[type][i]
                 if not np.all(x == 0):
-                    z[type].append(x)
-                    lengths[type].append(input_module.lengths[type][i])
-                    steps[type][key] = input_module.steps[type][key]
+                    z[type].append(child.z[type][i])
+                    lengths[type].append(child.lengths[type][i])
+                    steps[type][key] = child.steps[type][key]
             z[type] = np.array(z[type], dtype=np.float32)
             lengths[type] = np.array(lengths[type], dtype=int)
         self.z = z
@@ -383,7 +384,9 @@ def expand(module_config):
 
     #decorators
     if module_config['type'] == 'Trim':
-        return Trim(expand(module_config['child']))
+        conditional = expand(module_config['conditional'])
+        child = expand(module_config['child'])
+        return Trim(conditional, child)
     if module_config['type'] == 'Autoencoder':
         train_module = expand(module_config['train_module'])
         inference_module = expand(module_config['inference_module'])
@@ -400,5 +403,15 @@ def expand(module_config):
         return Tanh(expand(module_config['child']))
 
 if __name__ == '__main__':
-    data = InputModule(NBC_ROOT + 'config/hsmm.json')
-    print(data.z['dev'].shape)
+    apple = NBCChunks("Apple")
+    print(apple.z['dev'].shape)
+    apple_trim_self = Trim(apple, apple)
+    print(apple_trim_self.z['dev'].shape)
+    apple_preprocessed = Tanh(Clip(apple))
+    print(apple_preprocessed.z['dev'].shape)
+    apple_preprocessed_trim_self = Trim(apple_preprocessed, apple_preprocessed)
+    print(apple_preprocessed_trim_self.z['dev'].shape)
+    apple_preprocessed_trim = Trim(apple, apple_preprocessed)
+    print(apple_preprocessed_trim.z['dev'].shape)
+    print(apple_preprocessed.z['dev'][10])
+    print(apple_preprocessed_trim.z['dev'][10])
