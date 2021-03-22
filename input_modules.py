@@ -236,7 +236,7 @@ class Autoencoder(InputModule):
             tf.keras.callbacks.EarlyStopping(patience=25, verbose=1),
             tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
         ]
-        self.vae.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
+        self.vae.fit(x=train_dset, epochs=1, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
         self.vae(train_module.z['train'][:10])
         self.vae.load_weights(tmp_path)
 
@@ -254,7 +254,12 @@ class Autoencoder(InputModule):
 
     def save(self):
         super().save()
-        weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(self.fname)
+        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        with open(keyspath) as f:
+            keys = json.load(f)
+        config = serialize_configuration(self)
+        savename = keys[config]
+        weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
         self.vae.save_weights(weightspath)
 
     def load(self, load_model=False):
@@ -264,7 +269,12 @@ class Autoencoder(InputModule):
                 _, seq_len, input_dim = self.inference_module.z['train'].shape
                 self.vae = VAE(seq_len, input_dim, 8, 1, 10000)
                 self.vae(self.inference_module.z['train'][:10])
-                weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(self.fname)
+                keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+                with open(keyspath) as f:
+                    keys = json.load(f)
+                config = serialize_configuration(self)
+                savename = keys[config]
+                weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
                 self.vae.load_weights(weightspath)
             return True
         return False
