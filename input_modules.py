@@ -451,8 +451,29 @@ def serialize_configuration(module):
         return json.dumps({'type': 'DirectInputModule', 'obj': module.obj}, indent=4)
 
     #decorators
-    '''if isinstance(module, Trim):
-        return json.dumps()'''
+    if isinstance(module, Trim):
+        conditional_config = serialize_configuration(module.conditional)
+        child_config = serialize_configuration(module.child)
+        return json.dumps({'type': 'Trim', 'conditional': conditional_config, 'child': child_config}, indent=4)
+    if isinstance(module, Autoencoder):
+        train_config = serialize_configuration(module.train_module)
+        inference_config = serialize_configuration(module.inference_module)
+        return json.dumps({'type': 'Autoencoder', 'train_config': train_config, 'inference_config': inference_config})
+    if isinstance(module, ConvertToSessions):
+        return json.dumps({'type': 'ConvertToSessions', 'child': serialize_configuration(module.child)})
+    if isinstance(module, ConvertToChunks):
+        return json.dumps({'type': 'ConvertToChunks', 'child': serialize_configuration(module.child)})
+    if isinstance(module, StandardScale):
+        return json.dumps({'type': 'StandardScale', 'child': serialize_configuration(module.child)})
+    if isinstance(module, Clip):
+        return json.dumps({'type': 'Clip', 'child': serialize_configuration(module.child)})
+    if isinstance(module, Tanh):
+        return json.dumps({'type': 'Tanh', 'child': serialize_configuration(module.child)})
+
+    #composite
+    if isinstance(module, Concat):
+        children = [serialize_configuration(child) for child in module.children]
+        return json.dumps({'type': 'Concat', 'children': children})
 
 def deserialize_configuration(config):
     #leaves
@@ -463,23 +484,28 @@ def deserialize_configuration(config):
 
     #decorators
     if config['type'] == 'Trim':
-        conditional = expand(config['conditional'])
-        child = expand(config['child'])
+        conditional = deserialize_configuration(config['conditional'])
+        child = deserialize_configuration(config['child'])
         return Trim(conditional, child)
     if config['type'] == 'Autoencoder':
-        train_config = expand(config['train_config'])
-        inference_config = expand(config['inference_config'])
+        train_config = deserialize_configuration(config['train_config'])
+        inference_config = deserialize_configuration(config['inference_config'])
         return Autoencoder(train_config, inference_config)
     if config['type'] == 'ConvertToSessions':
-        return ConvertToSessions(expand(config['child']))
+        return ConvertToSessions(deserialize_configuration(config['child']))
     if config['type'] == 'ConvertToChunks':
-        return ConvertToChunks(expand(config['child']))
+        return ConvertToChunks(deserialize_configuration(config['child']))
     if config['type'] == 'StandardScale':
-        return StandardScale(expand(config['child']))
+        return StandardScale(deserialize_configuration(config['child']))
     if config['type'] == 'Clip':
-        return Clip(expand(config['child']))
+        return Clip(deserialize_configuration(config['child']))
     if config['type'] == 'Tanh':
-        return Tanh(expand(config['child']))
+        return Tanh(deserialize_configuration(config['child']))
+
+    #composite
+    if config['type'] == 'Concat':
+        children = [deserialize_configuration(child) for child in config['children']]
+        return Concat(children)
 
 if __name__ == '__main__':
     obj = sys.argv[1]
