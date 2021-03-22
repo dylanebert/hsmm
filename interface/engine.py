@@ -65,7 +65,6 @@ def get_encodings():
     session = request.args.get('session')
     hsmm_wrapper = controller.hsmm_wrapper
     data = controller.get_encodings(session, 'dev')
-    print(data)
     pal = sns.color_palette('hls', data['label'].max() + 1).as_hex()
     data['x'] = data.apply(lambda row: row['encoding'][0], axis=1)
     data['y'] = data.apply(lambda row: row['encoding'][1], axis=1)

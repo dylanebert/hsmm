@@ -348,6 +348,21 @@ class Tanh(InputModule):
         self.steps = child.steps
         self.lengths = child.lengths
 
+'''
+composite
+---
+concatenate children
+'''
+class Concat(InputModule):
+    def __init__(self, *children):
+        self.z = {'train': [], 'dev': [], 'test': []}
+        for type in ['train', 'dev', 'test']:
+            for child in children:
+                self.z[type].append(child.z[type])
+            self.z[type] = np.concatenate(self.z[type], axis=-1)
+        self.steps = children[0].steps
+        self.lengths = children[0].steps
+
 #-----------------------utility functions-----------------------
 class Args:
     def __init__(self):
@@ -403,15 +418,17 @@ def expand(module_config):
         return Tanh(expand(module_config['child']))
 
 if __name__ == '__main__':
-    apple = NBCChunks("Apple")
-    print(apple.z['dev'].shape)
-    apple_trim_self = Trim(apple, apple)
-    print(apple_trim_self.z['dev'].shape)
-    apple_preprocessed = Tanh(Clip(apple))
-    print(apple_preprocessed.z['dev'].shape)
-    apple_preprocessed_trim_self = Trim(apple_preprocessed, apple_preprocessed)
-    print(apple_preprocessed_trim_self.z['dev'].shape)
-    apple_preprocessed_trim = Trim(apple, apple_preprocessed)
-    print(apple_preprocessed_trim.z['dev'].shape)
-    print(apple_preprocessed.z['dev'][10])
-    print(apple_preprocessed_trim.z['dev'][10])
+    '''from nbc import obj_names
+    autoencoders = []
+    for name in obj_names:
+        data = Tanh(Clip(NBCChunks(name)))
+        trim = Trim(NBCChunks(name), data)
+        autoencoder = Autoencoder(trim, data)
+        autoencoder.append(autoencoder)
+    combined = Concat(*autoencoders)
+    print(combined.z['dev'].shape)'''
+    import sys
+    obj = sys.argv[1]
+    data = Tanh(Clip(NBCChunks(obj)))
+    trim = Trim(NBCChunks(obj), data)
+    autoencoder = Autoencoder(trim, data)
