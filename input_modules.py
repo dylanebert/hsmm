@@ -24,28 +24,49 @@ required attributes:
 '''
 class InputModule:
     def __init__(self, config_path):
-        self.config_path = config_path
-        with open(NBC_ROOT + 'config/{}.json'.format(config_path)) as f:
-            config = json.load(f)
-        module = expand(config)
-        self.z = module.z
-        self.steps = module.steps
-        self.lengths = module.lengths
+        return
 
     def load(self):
-        savepath = NBC_ROOT + 'cache/input_modules/{}.json'.format(self.fname)
+        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        if not os.path.exists(keyspath):
+            return False
+        with open(keyspath) as f:
+            keys = json.load(f)
+
+        config = serialize_configuration(self)
+        if config not in keys:
+            return False
+
+        savename = keys[config]
+        savepath = NBC_ROOT + 'cache/input_modules/{}.json'.format(savename)
         if not os.path.exists(savepath):
             return False
+
         with open(savepath) as f:
             serialized = json.load(f)
         self.steps = deserialize_steps(serialized['steps'])
         self.z = deserialize_feature(serialized['z'])
         self.lengths = deserialize_feature(serialized['lengths'])
-        print('loaded {}'.format(savepath))
+
+        print('loaded {} from {}'.format(config, savepath))
         return True
 
     def save(self):
-        savepath = NBC_ROOT + 'cache/input_modules/{}.json'.format(self.fname)
+        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        if os.path.exists(keyspath):
+            with open(keyspath) as f:
+                keys = json.load(f)
+        else:
+            keys = {}
+
+        config = serialize_configuration(self)
+        if config in keys:
+            savename = keys[config]
+        else:
+            savename = str(uuid.uuid1())
+            keys[config] = savename
+        savepath = NBC_ROOT + 'cache/input_modules/{}.json'.format(savename)
+
         serialized = {
             'z': serialize_feature(self.z),
             'lengths': serialize_feature(self.lengths),
@@ -53,7 +74,24 @@ class InputModule:
         }
         with open(savepath, 'w+') as f:
             json.dump(serialized, f)
-        print('saved to {}'.format(savepath))
+        with open(keyspath, 'w+') as f:
+            json.dump(keys, f)
+        print('saved {} to {}'.format(config, savepath))
+
+    def save_config(self, fname):
+        fpath = NBC_ROOT + 'config/{}.json'.format(fname)
+        with open(fpath, 'w+') as f:
+            f.write(serialize_configuration(self))
+        print('saved config to {}'.format(fpath))
+
+    @classmethod
+    def load_from_config(cls, fname):
+        fpath = NBC_ROOT + 'config/{}.json'.format(fname)
+        with open(fpath) as f:
+            config = json.load(f)
+        module = deserialize_configuration(config)
+        print('loaded from config {}'.format(fpath))
+        return module
 
 '''
 leaf
@@ -79,7 +117,6 @@ class DirectInputModule(InputModule):
 
     def __init__(self, obj):
         self.obj = obj
-        self.fname = 'direct_inputs_{}'.format(obj)
         if self.load():
             return
         args = Args()
@@ -133,7 +170,6 @@ class NBCChunks(InputModule):
 
     def __init__(self, obj):
         self.obj = obj
-        self.fname = 'nbc_chunks_{}'.format(obj)
         if self.load():
             return
         args = Args()
@@ -161,7 +197,6 @@ class Trim(InputModule):
     def __init__(self, conditional, child):
         self.conditional = conditional
         self.child = child
-        self.fname = '{}_{}_trim'.format(conditional.fname, child.fname)
         z = {'train': [], 'dev': [], 'test': []}
         lengths = {'train': [], 'dev': [], 'test': []}
         steps = {'train': {}, 'dev': {}, 'test': {}}
@@ -189,7 +224,6 @@ class Autoencoder(InputModule):
     def __init__(self, train_module, inference_module):
         self.train_module = train_module
         self.inference_module = inference_module
-        self.fname = 'autoencoder_{}_{}'.format(train_module.fname, inference_module.fname)
         if self.load():
             return
         train_dset = tf.data.Dataset.from_tensor_slices(train_module.z['train']).batch(16)
@@ -241,16 +275,15 @@ decorator
 convert data to session sequences
 '''
 class ConvertToSessions(InputModule):
-    def __init__(self, input_module):
-        self.fname = '{}_to_sessions'.format(input_module.fname)
-        self.child = input_module
+    def __init__(self, child):
+        self.child = child
         sessions = {'train': {}, 'dev': {}, 'test': {}}
         for type in ['train', 'dev', 'test']:
-            for i, (key, steps) in enumerate(input_module.steps[type].items()):
+            for i, (key, steps) in enumerate(child.steps[type].items()):
                 session = key[0]
                 if session not in sessions[type]:
                     sessions[type][session] = {'z': [], 'steps': [], 'indices': []}
-                sessions[type][session]['z'].append(input_module.z[type][i])
+                sessions[type][session]['z'].append(child.z[type][i])
                 sessions[type][session]['steps'].append(steps)
                 sessions[type][session]['indices'].append(i)
         n_dim = next(iter(sessions['train'].values()))['z'][0].shape[-1]
@@ -282,17 +315,17 @@ convert sessions to chunks
 inverse of ConvertToSessions
 '''
 class ConvertToChunks(InputModule):
-    def __init__(self, input_module):
-        self.fname = '{}_to_chunks'.format(input_module.fname)
+    def __init__(self, child):
+        self.child = child
         self.z = {'train': [], 'dev': [], 'test': []}
         self.steps = {'train': {}, 'dev': {}, 'test': {}}
         self.lengths = {'train': [], 'dev': [], 'test': []}
         for type in ['train', 'dev', 'test']:
-            for i, key in enumerate(input_module.steps[type].keys()):
+            for i, key in enumerate(child.steps[type].keys()):
                 self.steps[type][key] = []
-                for j in range(int(input_module.lengths[type][i])):
-                    z = input_module.z[type][i,j,:]
-                    steps = input_module.steps[type][key][j]
+                for j in range(int(child.lengths[type][i])):
+                    z = child.z[type][i,j,:]
+                    steps = child.steps[type][key][j]
                     self.z[type].append(z)
                     self.lengths[type].append(1)
                     self.steps[type][key].append(steps)
@@ -307,7 +340,6 @@ standard scale inputs
 '''
 class StandardScale(InputModule):
     def __init__(self, child):
-        self.fname = '{}_scaled'.format(child.fname)
         self.child = child
         self.z = {}
         scaler = preprocessing.StandardScaler().fit(child.z['train'])
@@ -323,7 +355,6 @@ clip child to range [-3, 3]
 '''
 class Clip(InputModule):
     def __init__(self, child):
-        self.fname = '{}_clip'.format(child.fname)
         self.child = child
         self.z = {}
         for type in ['train', 'dev', 'test']:
@@ -338,7 +369,6 @@ apply tanh estimator scaling to child
 '''
 class Tanh(InputModule):
     def __init__(self, child):
-        self.fname = '{}_tanh'.format(child.fname)
         self.child = child
         m = np.mean(child.z['train'], axis=0)
         std = np.std(child.z['train'], axis=0)
@@ -354,14 +384,27 @@ composite
 concatenate children
 '''
 class Concat(InputModule):
-    def __init__(self, *children):
+    def __init__(self, children):
+        self.children = children
+        if self.load():
+            return
         self.z = {'train': [], 'dev': [], 'test': []}
         for type in ['train', 'dev', 'test']:
             for child in children:
                 self.z[type].append(child.z[type])
             self.z[type] = np.concatenate(self.z[type], axis=-1)
         self.steps = children[0].steps
-        self.lengths = children[0].steps
+        self.lengths = children[0].lengths
+        self.save()
+
+'''
+composite
+---
+get max at magnitude at each index
+'''
+class Max(InputModule):
+    def __init__(self, conditionals, children):
+        return
 
 #-----------------------utility functions-----------------------
 class Args:
@@ -390,45 +433,58 @@ def deserialize_steps(serialized):
             key_tuple = ast.literal_eval(key)
             steps[type][key_tuple] = np.array(serialized[type][key])
     return steps
-def expand(module_config):
+def serialize_configuration(module):
     #leaves
-    if module_config['type'] == 'NBCChunks':
-        return NBCChunks(module_config['obj'])
-    if module_config['type'] == 'DirectInputModule':
-        return DirectInputModule(module_config['obj'])
+    if isinstance(module, NBCChunks):
+        return json.dumps({'type': 'NBCChunks', 'obj': module.obj}, indent=4)
+    if isinstance(module, DirectInputModule):
+        return json.dumps({'type': 'DirectInputModule', 'obj': module.obj}, indent=4)
 
     #decorators
-    if module_config['type'] == 'Trim':
-        conditional = expand(module_config['conditional'])
-        child = expand(module_config['child'])
+    '''if isinstance(module, Trim):
+        return json.dumps()'''
+
+def deserialize_configuration(config):
+    #leaves
+    if config['type'] == 'NBCChunks':
+        return NBCChunks(config['obj'])
+    if config['type'] == 'DirectInputconfig':
+        return DirectInputconfig(config['obj'])
+
+    #decorators
+    if config['type'] == 'Trim':
+        conditional = expand(config['conditional'])
+        child = expand(config['child'])
         return Trim(conditional, child)
-    if module_config['type'] == 'Autoencoder':
-        train_module = expand(module_config['train_module'])
-        inference_module = expand(module_config['inference_module'])
-        return Autoencoder(train_module, inference_module)
-    if module_config['type'] == 'ConvertToSessions':
-        return ConvertToSessions(expand(module_config['child']))
-    if module_config['type'] == 'ConvertToChunks':
-        return ConvertToChunks(expand(module_config['child']))
-    if module_config['type'] == 'StandardScale':
-        return StandardScale(expand(module_config['child']))
-    if module_config['type'] == 'Clip':
-        return Clip(expand(module_config['child']))
-    if module_config['type'] == 'Tanh':
-        return Tanh(expand(module_config['child']))
+    if config['type'] == 'Autoencoder':
+        train_config = expand(config['train_config'])
+        inference_config = expand(config['inference_config'])
+        return Autoencoder(train_config, inference_config)
+    if config['type'] == 'ConvertToSessions':
+        return ConvertToSessions(expand(config['child']))
+    if config['type'] == 'ConvertToChunks':
+        return ConvertToChunks(expand(config['child']))
+    if config['type'] == 'StandardScale':
+        return StandardScale(expand(config['child']))
+    if config['type'] == 'Clip':
+        return Clip(expand(config['child']))
+    if config['type'] == 'Tanh':
+        return Tanh(expand(config['child']))
 
 if __name__ == '__main__':
+    obj = sys.argv[1]
+    leaf = NBCChunks(obj)
+    data = Tanh(Clip(leaf))
+    trim = Trim(leaf, data)
+    autoencoder = Autoencoder(trim, data)
+    autoencoder.save_config('autoencoder_{}'.format(obj))
     '''from nbc import obj_names
     autoencoders = []
     for name in obj_names:
-        data = Tanh(Clip(NBCChunks(name)))
-        trim = Trim(NBCChunks(name), data)
+        leaf = NBCChunks(name)
+        data = Tanh(Clip(leaf))
+        trim = Trim(leaf, data)
         autoencoder = Autoencoder(trim, data)
-        autoencoder.append(autoencoder)
-    combined = Concat(*autoencoders)
+        autoencoders.append(autoencoder)
+    combined = Concat(autoencoders)
     print(combined.z['dev'].shape)'''
-    import sys
-    obj = sys.argv[1]
-    data = Tanh(Clip(NBCChunks(obj)))
-    trim = Trim(NBCChunks(obj), data)
-    autoencoder = Autoencoder(trim, data)
