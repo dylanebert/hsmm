@@ -231,7 +231,7 @@ class Autoencoder(InputModule):
         _, seq_len, input_dim = train_module.z['train'].shape
         self.vae = VAE(seq_len, input_dim, 8, 1, 10000)
         self.vae.compile(optimizer='adam')
-        tmp_path = NBC_ROOT + 'cache/autoencoder/tmp_{}.h5'.format(str(uuid.uuid1()))
+        tmp_path = NBC_ROOT + 'cache/tmp/{}.h5'.format(str(uuid.uuid1()))
         callbacks = [
             tf.keras.callbacks.EarlyStopping(patience=25, verbose=1),
             tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
