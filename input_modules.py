@@ -274,14 +274,10 @@ class Autoencoder(InputModule):
         self.vae.load_weights(tmp_path)
 
         self.z = {}
-        self.lengths = {}
-        self.reconstructions = {}
         for type in ['train', 'dev', 'test']:
             z = self.vae.encode(inference_module.z[type])[0].numpy()
-            x_ = self.vae(inference_module.z[type]).numpy()
             self.z[type] = z
-            self.lengths[type] = np.ones((z.shape[0],))
-            self.reconstructions[type] = x_
+        self.lengths = inference_module.lengths
         self.steps = inference_module.steps
         self.save()
 
@@ -311,6 +307,112 @@ class Autoencoder(InputModule):
                 self.vae.load_weights(weightspath)
             return True
         return False
+
+'''
+composite
+---
+trains on train module as in regular encoder
+produces multiple encoded train modules, to be accessed with custom accessors
+'''
+class AutoencoderUnified(InputModule):
+    def __init__(self, train_module, inference_modules):
+        self.train_module = train_module
+        self.inference_modules = inference_modules
+        if self.load():
+            return
+        train_dset = tf.data.Dataset.from_tensor_slices(train_module.z['train']).batch(16)
+        dev_dset = tf.data.Dataset.from_tensor_slices(train_module.z['dev']).batch(16)
+        _, seq_len, input_dim = train_module.z['train'].shape
+        self.vae = VAE(seq_len, input_dim, 8, 1, 10000)
+        self.vae.compile(optimizer='adam')
+        tmp_path = NBC_ROOT + 'cache/tmp/{}.h5'.format(str(uuid.uuid1()))
+        callbacks = [
+            tf.keras.callbacks.EarlyStopping(patience=25, verbose=1),
+            tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
+        ]
+        self.vae.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
+        self.vae(train_module.z['train'][:10])
+        self.vae.load_weights(tmp_path)
+
+        self.output_modules = []
+        for inference_module in inference_modules:
+            module = InputModule()
+            module.z = {}
+            module.steps = inference_module.steps
+            module.lengths = inference_module.lengths
+            for type in ['train', 'dev', 'test']:
+                module.z[type] = self.vae.encode(inference_module.z[type])[0].numpy()
+            self.output_modules.append(module)
+        self.save()
+
+    def load(self, load_model=False):
+        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        if not os.path.exists(keyspath):
+            return False
+        with open(keyspath) as f:
+            keys = json.load(f)
+
+        config = serialize_configuration(self)
+        if config not in keys:
+            return False
+
+        savename = keys[config]
+        self.output_modules = []
+        i = 0
+        while True:
+            savepath = NBC_ROOT + 'cache/input_modules/{}_{}'.format(savename, i)
+            if not os.path.exists(savepath):
+                break
+            with open(savepath) as f:
+                serialized = json.load(f)
+            module = InputModule()
+            module.steps = deserialize_steps(serialized['steps'])
+            module.z = deserialize_feature(serialized['z'])
+            module.lengths = deserialize_feature(serialized['lengths'])
+            self.output_modules.append(module)
+            i += 1
+
+        if load_model:
+            _, seq_len, input_dim = self.inference_modules[0].z['train'].shape
+            self.vae = VAE(seq_len, input_dim, 8, 1, 10000)
+            self.vae(self.inference_modules[0].z['train'][:10])
+            weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+            self.vae.load_weights(weightspath)
+
+        print('loaded {} from {}'.format(config, savepath))
+        return True
+
+    def save(self):
+        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        if os.path.exists(keyspath):
+            with open(keyspath) as f:
+                keys = json.load(f)
+        else:
+            keys = {}
+
+        config = serialize_configuration(self)
+        if config in keys:
+            savename = keys[config]
+        else:
+            savename = str(uuid.uuid1())
+            keys[config] = savename
+
+        for i, module in enumerate(self.output_modules):
+            savepath = NBC_ROOT + 'cache/input_modules/{}_{}'.format(savename, i)
+            serialized = {
+                'z': serialize_feature(module.z),
+                'lengths': serialize_feature(module.lengths),
+                'steps': serialize_steps(module.steps)
+            }
+            with open(savepath, 'w+') as f:
+                json.dump(serialized, f)
+
+        weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+        self.vae.save_weights(weightspath)
+
+        with open(keyspath, 'w+') as f:
+            json.dump(keys, f)
+        print('saved {} to {}'.format(config, savepath))
 
 '''
 decorator
@@ -445,7 +547,7 @@ class ReducePCA(InputModule):
 '''
 composite
 ---
-concatenate children
+concatenate children along axis 0
 '''
 class Concat(InputModule):
     def __init__(self, children):
@@ -453,12 +555,18 @@ class Concat(InputModule):
         if self.load():
             return
         self.z = {'train': [], 'dev': [], 'test': []}
+        self.lengths = {'train': [], 'dev': [], 'test': []}
+        self.steps = {'train': {}, 'dev': {}, 'test': {}}
         for type in ['train', 'dev', 'test']:
             for child in children:
+                if child.z[type].shape[0] == 0:
+                    continue
                 self.z[type].append(child.z[type])
-            self.z[type] = np.concatenate(self.z[type], axis=-1)
-        self.steps = children[0].steps
-        self.lengths = children[0].lengths
+                self.lengths[type].append(child.lengths[type])
+                for key in child.steps[type].keys():
+                    self.steps[type][key] = child.steps[type][key]
+            self.z[type] = np.concatenate(self.z[type], axis=0)
+            self.lengths[type] = np.concatenate(self.lengths[type], axis=0)
         self.save()
 
 '''
@@ -612,6 +720,10 @@ def serialize_configuration(module):
         conditionals = [serialize_configuration(conditional) for conditional in module.conditionals]
         children = [serialize_configuration(child) for child in module.children]
         return json.dumps({'type': 'Max', 'conditionals': conditionals, 'children': children, 'add_indices': module.add_indices})
+    if isinstance(module, AutoencoderUnified):
+        train_config = serialize_configuration(module.train_module)
+        inference_configs = [serialize_configuration(inference_module) for inference_module in module.inference_modules]
+        return json.dumps({'type': 'AutoencoderUnified', 'train_config': train_config, 'inference_configs': inference_configs})
 def deserialize_configuration(config):
     if isinstance(config, str):
         config = json.loads(config)
@@ -652,6 +764,10 @@ def deserialize_configuration(config):
         conditionals = [deserialize_configuration(conditional) for conditional in config['conditionals']]
         children = [deserialize_configuration(child) for child in config['children']]
         return Max(conditionals, children, config['add_indices'])
+    if config['type'] == 'AutoencoderUnified':
+        train_config = deserialize_configuration(config['train_config'])
+        inference_configs = [deserialize_configuration(inference_config) for inference_config in config['inference_configs']]
+        return AutoencoderUnified(train_config, inference_configs)
 def report(module):
     print(module.z['dev'].shape)
     print(np.mean(module.z['dev']))
@@ -666,13 +782,18 @@ if __name__ == '__main__':
     output = ConvertToSessions(StandardScale(autoencoder))
     output.save_config('autoencoder_{}'.format(obj))'''
 
-    autoencoders = []
     conditionals = []
+    train_modules = []
+    inference_modules = []
     for obj in obj_names:
-        conditional = NBCChunks(obj)
-        autoencoder = InputModule.build_from_config('autoencoder_{}'.format(obj)).child #child is standard scaled autoencoder encodings
-        conditionals.append(conditional)
-        autoencoders.append(autoencoder)
-    combined = Max(conditionals, autoencoders, True)
-    output = ConvertToSessions(combined)
+        data = NBCChunks(obj)
+        preprocessed = MinMax(Clip(data))
+        trimmed = Trim(data, preprocessed)
+        conditionals.append(data)
+        train_modules.append(trimmed)
+        inference_modules.append(preprocessed)
+    train_module = Concat(train_modules)
+    autoencoder_unified = AutoencoderUnified(train_module, inference_modules)
+    combined = Max(conditionals, autoencoder_unified.output_modules, True)
+    output = ConvertToSessions(StandardScale(combined))
     output.save_config('max_objs_indices')
