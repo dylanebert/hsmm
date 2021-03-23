@@ -166,4 +166,5 @@ class Args:
         return
 
 if __name__ == '__main__':
-    HSMMWrapper('hsmm_Apple', device='cuda')
+    config = sys.argv[1]
+    HSMMWrapper(config, device='cuda')

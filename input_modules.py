@@ -658,21 +658,21 @@ def report(module):
     print(np.std(module.z['dev']))
 
 if __name__ == '__main__':
-    obj = sys.argv[1]
+    '''obj = sys.argv[1]
     data = NBCChunks(obj)
     preprocessed = MinMax(Clip(data))
     trimmed = Trim(data, preprocessed)
     autoencoder = Autoencoder(trimmed, preprocessed)
     output = ConvertToSessions(StandardScale(autoencoder))
-    output.save_config('autoencoder_{}'.format(obj))
+    output.save_config('autoencoder_{}'.format(obj))'''
 
-    '''autoencoders = []
+    autoencoders = []
     conditionals = []
     for obj in obj_names:
         conditional = NBCChunks(obj)
-        autoencoder = InputModule.build_from_config('autoencoder_{}'.format(obj))
+        autoencoder = InputModule.build_from_config('autoencoder_{}'.format(obj)).child #child is standard scaled autoencoder encodings
         conditionals.append(conditional)
         autoencoders.append(autoencoder)
-    combined = Max(conditionals, autoencoders, False)
+    combined = Max(conditionals, autoencoders, True)
     output = ConvertToSessions(combined)
-    output.save_config('max_objs')'''
+    output.save_config('max_objs_indices')
