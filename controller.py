@@ -23,7 +23,7 @@ def get_encodings(session, type='dev'):
     lengths = hsmm_wrapper.input_module.lengths[type]
     data = []
     for i, key in enumerate(steps.keys()):
-        if key == session:
+        if key[0] == session:
             for j in range(int(lengths[i])):
                  data.append({
                     'start_step': int(steps[key][j][0]),
@@ -38,7 +38,7 @@ def get_predictions(session, type='dev'):
     global hsmm_wrapper
     steps = hsmm_wrapper.input_module.steps[type]
     for i, key in enumerate(steps.keys()):
-        if key == session:
+        if key[0] == session:
             return hsmm_wrapper.predictions[type][i], steps[key]
     assert len(predictions) == 1
     return predictions[0]
@@ -48,14 +48,14 @@ def get_timestamp(session, step, type='dev'):
     steps = hsmm_wrapper.input_module.steps[type]
     start_step = -1
     for key in steps.keys():
-        if key == session:
+        if key[0] == session:
             start_step = int(steps[key][0][0])
             break
     assert not start_step == -1
     return float((step - start_step) / 90.)
 
 if __name__ == '__main__':
-    initialize('hsmm_default')
+    initialize('hsmm_max_objs_indices')
     #encodings = get_encodings('17_1c_task1', 'dev')
     predictions, steps = get_predictions('17_1c_task2', 'dev')
     print(predictions, steps)

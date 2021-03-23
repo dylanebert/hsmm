@@ -79,6 +79,7 @@ class InputModule:
         print('saved {} to {}'.format(config, savepath))
 
     def save_config(self, fname):
+        self.save()
         fpath = NBC_ROOT + 'config/{}.json'.format(fname)
         with open(fpath, 'w+') as f:
             f.write(serialize_configuration(self))
@@ -444,8 +445,83 @@ composite
 get max at magnitude at each index
 '''
 class Max(InputModule):
-    def __init__(self, conditionals, children):
-        return
+    def __init__(self, conditionals, children, add_indices):
+        self.conditionals = conditionals
+        self.children = children
+        self.add_indices = add_indices
+        if self.load():
+            return
+
+        z_cond = {}
+        z = {}
+        assert len(conditionals) == len(children)
+        for type in ['train', 'dev', 'test']:
+            z_cond_ = []
+            z_ = []
+            for i in range(len(conditionals)):
+                z_cond_.append(conditionals[i].z[type])
+                z_.append(children[i].z[type])
+            z_cond_ = np.stack(z_cond_, axis=1)
+            z_ = np.stack(z_, axis=1)
+            z_cond[type] = z_cond_
+            z[type] = z_
+
+        self.z = {}
+        self.max_indices = {}
+        self.steps = children[0].steps
+        self.lengths = children[0].lengths
+        for type in ['train', 'dev', 'test']:
+            magnitudes = np.linalg.norm(z_cond[type], axis=(2, 3))
+            max_indices = np.argmax(magnitudes, axis=1)
+            print(np.unique(max_indices, return_counts=True)[1])
+
+            max_z = []
+            max_steps = []
+            max_lengths = []
+            for i in range(z[type].shape[0]):
+                max_z.append(z[type][i, max_indices[i], :])
+            max_z = np.array(max_z)
+
+            if add_indices:
+                one_hot = []
+                n_objs = len(conditionals)
+                for i in range(z[type].shape[0]):
+                    v = magnitudes[i, max_indices[i]]
+                    vec = np.zeros((n_objs,))
+                    if v > 0.:
+                        vec[max_indices[i]] = 1
+                    one_hot.append(vec)
+                one_hot = np.array(one_hot)
+                max_z = np.concatenate((max_z, one_hot), axis=-1)
+
+            self.z[type] = max_z
+            self.max_indices[type] = max_indices
+        self.save()
+
+    def save(self):
+        super().save()
+        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        with open(keyspath) as f:
+            keys = json.load(f)
+        config = serialize_configuration(self)
+        savename = keys[config]
+        indicespath = NBC_ROOT + 'cache/input_modules/{}_indices.json'.format(savename)
+        with open(indicespath, 'w+') as f:
+            json.dump(serialize_feature(self.max_indices), f)
+
+    def load(self):
+        res = super().load()
+        if res:
+            keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+            with open(keyspath) as f:
+                keys = json.load(f)
+            config = serialize_configuration(self)
+            savename = keys[config]
+            indicespath = NBC_ROOT + 'cache/input_modules/{}_indices.json'.format(savename)
+            with open(indicespath) as f:
+                self.max_indices = deserialize_feature(json.load(f))
+            return True
+        return False
 
 #-----------------------utility functions-----------------------
 class Args:
@@ -471,7 +547,10 @@ def deserialize_steps(serialized):
     steps = {'train': {}, 'dev': {}, 'test': {}}
     for type in ['train', 'dev', 'test']:
         for key in serialized[type].keys():
-            key_tuple = ast.literal_eval(key)
+            try:
+                key_tuple = ast.literal_eval(key)
+            except:
+                key_tuple = (key,)
             steps[type][key_tuple] = np.array(serialized[type][key])
     return steps
 def serialize_configuration(module):
@@ -503,11 +582,12 @@ def serialize_configuration(module):
 
     #composite
     if isinstance(module, Concat):
-        for child in module.children:
-            print(child.z['dev'].shape)
-            print(serialize_configuration(child))
         children = [serialize_configuration(child) for child in module.children]
         return json.dumps({'type': 'Concat', 'children': children})
+    if isinstance(module, Max):
+        conditionals = [serialize_configuration(conditional) for conditional in module.conditionals]
+        children = [serialize_configuration(child) for child in module.children]
+        return json.dumps({'type': 'Max', 'conditionals': conditionals, 'children': children, 'add_indices': module.add_indices})
 def deserialize_configuration(config):
     if isinstance(config, str):
         config = json.loads(config)
@@ -542,6 +622,10 @@ def deserialize_configuration(config):
     if config['type'] == 'Concat':
         children = [deserialize_configuration(child) for child in config['children']]
         return Concat(children)
+    if config['type'] == 'Max':
+        conditionals = [deserialize_configuration(conditional) for conditional in config['conditionals']]
+        children = [deserialize_configuration(child) for child in config['children']]
+        return Max(conditionals, children, config['add_indices'])
 
 if __name__ == '__main__':
     #obj = sys.argv[1]
@@ -550,8 +634,12 @@ if __name__ == '__main__':
     #sys.exit()
     from nbc import obj_names
     autoencoders = []
+    conditionals = []
     for obj in obj_names:
+        conditional = NBCChunks(obj)
         autoencoder = InputModule.build_from_config('autoencoder_{}'.format(obj))
+        conditionals.append(conditional)
         autoencoders.append(autoencoder)
-    combined = Concat(autoencoders)
-    print(combined.z['dev'].shape)
+    combined = Max(conditionals, autoencoders, False)
+    output = ConvertToSessions(combined)
+    output.save_config('max_objs')

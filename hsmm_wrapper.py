@@ -52,8 +52,8 @@ class HSMMWrapper:
         with open(NBC_ROOT + 'config/{}.json'.format(fname)) as f:
             args = json.load(f)
         self.args = args
-        self.input_module = InputModule(args['input_config'])
         self.device = torch.device(device)
+        self.input_module = InputModule.load_from_config(args['input_config'])
         if self.load():
             return
         self.data = {}
@@ -166,4 +166,4 @@ class Args:
         return
 
 if __name__ == '__main__':
-    HSMMWrapper('hsmm_default', device='cuda')
+    HSMMWrapper('hsmm_max_objs', device='cuda')
