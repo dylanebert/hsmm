@@ -12,7 +12,7 @@ assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 HSMM_ROOT = os.environ['HSMM_ROOT']
 NBC_ROOT = os.environ['NBC_ROOT']
 sys.path.append(NBC_ROOT)
-from nbc import NBC
+from nbc import NBC, obj_names
 from autoencoder import VAE
 
 '''
@@ -632,7 +632,13 @@ if __name__ == '__main__':
     #obj = 'Cup'
     #autoencoder = InputModule.build_from_config('autoencoder_{}'.format(obj))
     #sys.exit()
-    from nbc import obj_names
+
+    for obj in obj_names:
+        autoencoder = InputModule.build_from_config('autoencoder_{}'.format(obj))
+        output = ConvertToSessions(autoencoder)
+        output.save_config('autoencoder_input_{}'.format(obj))
+    sys.exit()
+
     autoencoders = []
     conditionals = []
     for obj in obj_names:

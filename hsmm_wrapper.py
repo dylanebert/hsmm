@@ -166,4 +166,4 @@ class Args:
         return
 
 if __name__ == '__main__':
-    HSMMWrapper('hsmm_max_objs', device='cuda')
+    HSMMWrapper('hsmm_Apple', device='cuda')
