@@ -108,7 +108,6 @@ class InputModule:
 
         with open(savepath) as f:
             serialized = json.load(f)
-
         module = InputModule()
         module.steps = deserialize_steps(serialized['steps'])
         module.z = deserialize_feature(serialized['z'])
@@ -504,6 +503,9 @@ def serialize_configuration(module):
 
     #composite
     if isinstance(module, Concat):
+        for child in module.children:
+            print(child.z['dev'].shape)
+            print(serialize_configuration(child))
         children = [serialize_configuration(child) for child in module.children]
         return json.dumps({'type': 'Concat', 'children': children})
 def deserialize_configuration(config):
@@ -543,14 +545,13 @@ def deserialize_configuration(config):
 
 if __name__ == '__main__':
     #obj = sys.argv[1]
-    obj = 'Cup'
-    autoencoder = InputModule.build_from_config('autoencoder_{}'.format(obj))
-    sys.exit()
+    #obj = 'Cup'
+    #autoencoder = InputModule.build_from_config('autoencoder_{}'.format(obj))
+    #sys.exit()
     from nbc import obj_names
     autoencoders = []
     for obj in obj_names:
-        print(obj)
-        autoencoder = InputModule.load_from_config('autoencoder_{}'.format(obj))
+        autoencoder = InputModule.build_from_config('autoencoder_{}'.format(obj))
         autoencoders.append(autoencoder)
     combined = Concat(autoencoders)
     print(combined.z['dev'].shape)
