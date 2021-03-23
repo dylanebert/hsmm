@@ -6,6 +6,7 @@ import ast
 import tensorflow as tf
 import uuid
 from sklearn import preprocessing
+from sklearn.decomposition import PCA
 
 assert 'HSMM_ROOT' in os.environ, 'set HSMM_ROOT'
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
@@ -379,6 +380,7 @@ class ConvertToChunks(InputModule):
 decorator
 ---
 standard scale inputs
+intended for 2d outputs from the autoencoder
 '''
 class StandardScale(InputModule):
     def __init__(self, child):
@@ -407,16 +409,36 @@ class Clip(InputModule):
 '''
 decorator
 ---
-apply tanh estimator scaling to child
+scale child to range [0, 1]
+intended for 3d inputs to the autoencoder
 '''
-class Tanh(InputModule):
+class MinMax(InputModule):
     def __init__(self, child):
         self.child = child
-        m = np.mean(child.z['train'], axis=0)
-        std = np.std(child.z['train'], axis=0)
         self.z = {}
+        scalers = []
+        for i in range(child.z['train'].shape[1]):
+            scaler = preprocessing.MinMaxScaler().fit(child.z['train'][:,i,:])
+            scalers.append(scaler)
         for type in ['train', 'dev', 'test']:
-            self.z[type] = .5 * (np.tanh(.01 * ((child.z[type] - m) / std)) + 1)
+            self.z[type] = np.zeros(child.z[type].shape)
+            for i in range(child.z['train'].shape[1]):
+                self.z[type][:,i,:] = np.clip(scalers[i].transform(child.z[type][:,i,:]), 0., 1.)
+        self.steps = child.steps
+        self.lengths = child.lengths
+
+'''
+decorator
+---
+use pca to reduce child dim to 2
+'''
+class ReducePCA(InputModule):
+    def __init__(self, child):
+        self.child = child
+        self.z = {}
+        scaler = PCA().fit(child.z['train'])
+        for type in ['train', 'dev', 'test']:
+            self.z[type] = scaler.transform(child.z[type])
         self.steps = child.steps
         self.lengths = child.lengths
 
@@ -577,8 +599,10 @@ def serialize_configuration(module):
         return json.dumps({'type': 'StandardScale', 'child': serialize_configuration(module.child)})
     if isinstance(module, Clip):
         return json.dumps({'type': 'Clip', 'child': serialize_configuration(module.child)})
-    if isinstance(module, Tanh):
-        return json.dumps({'type': 'Tanh', 'child': serialize_configuration(module.child)})
+    if isinstance(module, MinMax):
+        return json.dumps({'type': 'MinMax', 'child': serialize_configuration(module.child)})
+    if isinstance(module, ReducePCA):
+        return json.dumps({'type': 'ReducePCA', 'child': serialize_configuration(module.child)})
 
     #composite
     if isinstance(module, Concat):
@@ -615,8 +639,10 @@ def deserialize_configuration(config):
         return StandardScale(deserialize_configuration(config['child']))
     if config['type'] == 'Clip':
         return Clip(deserialize_configuration(config['child']))
-    if config['type'] == 'Tanh':
-        return Tanh(deserialize_configuration(config['child']))
+    if config['type'] == 'MinMax':
+        return MinMax(deserialize_configuration(config['child']))
+    if config['type'] == 'ReducePCA':
+        return ReducePCA(deserialize_configuration(config['child']))
 
     #composite
     if config['type'] == 'Concat':
@@ -626,20 +652,21 @@ def deserialize_configuration(config):
         conditionals = [deserialize_configuration(conditional) for conditional in config['conditionals']]
         children = [deserialize_configuration(child) for child in config['children']]
         return Max(conditionals, children, config['add_indices'])
+def report(module):
+    print(module.z['dev'].shape)
+    print(np.mean(module.z['dev']))
+    print(np.std(module.z['dev']))
 
 if __name__ == '__main__':
-    #obj = sys.argv[1]
-    #obj = 'Cup'
-    #autoencoder = InputModule.build_from_config('autoencoder_{}'.format(obj))
-    #sys.exit()
+    obj = sys.argv[1]
+    data = NBCChunks(obj)
+    preprocessed = MinMax(Clip(data))
+    trimmed = Trim(data, preprocessed)
+    autoencoder = Autoencoder(trimmed, preprocessed)
+    output = ConvertToSessions(StandardScale(autoencoder))
+    output.save_config('autoencoder_{}'.format(obj))
 
-    for obj in obj_names:
-        autoencoder = InputModule.build_from_config('autoencoder_{}'.format(obj))
-        output = ConvertToSessions(autoencoder)
-        output.save_config('autoencoder_input_{}'.format(obj))
-    sys.exit()
-
-    autoencoders = []
+    '''autoencoders = []
     conditionals = []
     for obj in obj_names:
         conditional = NBCChunks(obj)
@@ -648,4 +675,4 @@ if __name__ == '__main__':
         autoencoders.append(autoencoder)
     combined = Max(conditionals, autoencoders, False)
     output = ConvertToSessions(combined)
-    output.save_config('max_objs')
+    output.save_config('max_objs')'''
