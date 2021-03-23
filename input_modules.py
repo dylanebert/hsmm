@@ -23,7 +23,7 @@ required attributes:
     lengths: length of each sequence (for padded sequences)
 '''
 class InputModule:
-    def __init__(self, config_path):
+    def __init__(self):
         return
 
     def load(self):
@@ -86,11 +86,43 @@ class InputModule:
 
     @classmethod
     def load_from_config(cls, fname):
+        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        if not os.path.exists(keyspath):
+            assert False, '{} does not exist'.format(keyspath)
+            return None
+        with open(keyspath) as f:
+            keys = json.load(f)
+
+        fpath = NBC_ROOT + 'config/{}.json'.format(fname)
+        with open(fpath) as f:
+            config = f.read()
+        if config not in keys:
+            assert False, '{} config not in keys'.format(fpath)
+            return None
+
+        savename = keys[config]
+        savepath = NBC_ROOT + 'cache/input_modules/{}.json'.format(savename)
+        if not os.path.exists(savepath):
+            assert False, 'savepath {} does not exist'.format(savepath)
+            return False
+
+        with open(savepath) as f:
+            serialized = json.load(f)
+
+        module = InputModule()
+        module.steps = deserialize_steps(serialized['steps'])
+        module.z = deserialize_feature(serialized['z'])
+        module.lengths = deserialize_feature(serialized['lengths'])
+        print('loaded from config {}'.format(fpath))
+        return module
+
+    @classmethod
+    def build_from_config(cls, fname):
         fpath = NBC_ROOT + 'config/{}.json'.format(fname)
         with open(fpath) as f:
             config = json.load(f)
         module = deserialize_configuration(config)
-        print('loaded from config {}'.format(fpath))
+        print('built module from config {}'.format(fpath))
         return module
 
 '''
@@ -474,8 +506,10 @@ def serialize_configuration(module):
     if isinstance(module, Concat):
         children = [serialize_configuration(child) for child in module.children]
         return json.dumps({'type': 'Concat', 'children': children})
-
 def deserialize_configuration(config):
+    if isinstance(config, str):
+        config = json.loads(config)
+
     #leaves
     if config['type'] == 'NBCChunks':
         return NBCChunks(config['obj'])
@@ -508,19 +542,15 @@ def deserialize_configuration(config):
         return Concat(children)
 
 if __name__ == '__main__':
-    obj = sys.argv[1]
-    leaf = NBCChunks(obj)
-    data = Tanh(Clip(leaf))
-    trim = Trim(leaf, data)
-    autoencoder = Autoencoder(trim, data)
-    autoencoder.save_config('autoencoder_{}'.format(obj))
-    '''from nbc import obj_names
+    #obj = sys.argv[1]
+    obj = 'Cup'
+    autoencoder = InputModule.build_from_config('autoencoder_{}'.format(obj))
+    sys.exit()
+    from nbc import obj_names
     autoencoders = []
-    for name in obj_names:
-        leaf = NBCChunks(name)
-        data = Tanh(Clip(leaf))
-        trim = Trim(leaf, data)
-        autoencoder = Autoencoder(trim, data)
+    for obj in obj_names:
+        print(obj)
+        autoencoder = InputModule.load_from_config('autoencoder_{}'.format(obj))
         autoencoders.append(autoencoder)
     combined = Concat(autoencoders)
-    print(combined.z['dev'].shape)'''
+    print(combined.z['dev'].shape)
