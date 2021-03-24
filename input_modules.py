@@ -451,7 +451,7 @@ class ConvertToSessions(InputModule):
                 steps = np.array(sessions[type][session]['steps'], dtype=int)
                 self.z[type][i, :z.shape[0], :] = z
                 self.lengths[type][i] = z.shape[0]
-                self.steps[type][session] = steps
+                self.steps[type][(session,)] = steps
 
 '''
 decorator
@@ -467,14 +467,12 @@ class ConvertToChunks(InputModule):
         self.lengths = {'train': [], 'dev': [], 'test': []}
         for type in ['train', 'dev', 'test']:
             for i, key in enumerate(child.steps[type].keys()):
-                self.steps[type][key] = []
                 for j in range(int(child.lengths[type][i])):
                     z = child.z[type][i,j,:]
                     steps = child.steps[type][key][j]
                     self.z[type].append(z)
                     self.lengths[type].append(1)
-                    self.steps[type][key].append(steps)
-                self.steps[type][key] = np.array(self.steps[type][key], dtype=int)
+                    self.steps[type][(key[0], steps[0])] = steps
             self.z[type] = np.array(self.z[type], dtype=np.float32)
             self.lengths[type] = np.array(self.lengths[type], dtype=int)
 
@@ -567,6 +565,27 @@ class Concat(InputModule):
                     self.steps[type][key] = child.steps[type][key]
             self.z[type] = np.concatenate(self.z[type], axis=0)
             self.lengths[type] = np.concatenate(self.lengths[type], axis=0)
+        self.save()
+
+'''
+composite
+---
+concatenate children along axis -1
+'''
+class ConcatFeat(InputModule):
+    def __init__(self, children):
+        self.children = children
+        if self.load():
+            return
+        self.z = {'train': [], 'dev': [], 'test': []}
+        for type in ['train', 'dev', 'test']:
+            for child in children:
+                if child.z[type].shape[0] == 0:
+                    continue
+                self.z[type].append(child.z[type])
+            self.z[type] = np.concatenate(self.z[type], axis=-1)
+        self.steps = children[0].steps
+        self.lengths = children[0].lengths
         self.save()
 
 '''
@@ -716,6 +735,9 @@ def serialize_configuration(module):
     if isinstance(module, Concat):
         children = [serialize_configuration(child) for child in module.children]
         return json.dumps({'type': 'Concat', 'children': children})
+    if isinstance(module, ConcatFeat):
+        children = [serialize_configuration(child) for child in module.children]
+        return json.dumps({'type': 'ConcatFeat', 'children': children})
     if isinstance(module, Max):
         conditionals = [serialize_configuration(conditional) for conditional in module.conditionals]
         children = [serialize_configuration(child) for child in module.children]
@@ -760,6 +782,9 @@ def deserialize_configuration(config):
     if config['type'] == 'Concat':
         children = [deserialize_configuration(child) for child in config['children']]
         return Concat(children)
+    if config['type'] == 'ConcatFeat':
+        children = [deserialize_configuration(child) for child in config['children']]
+        return ConcatFeat(children)
     if config['type'] == 'Max':
         conditionals = [deserialize_configuration(conditional) for conditional in config['conditionals']]
         children = [deserialize_configuration(child) for child in config['children']]
@@ -798,7 +823,7 @@ if __name__ == '__main__':
     output = ConvertToSessions(StandardScale(combined))
     output.save_config('max_objs_indices')'''
 
-    conditionals = []
+    '''conditionals = []
     train_modules = []
     for obj in ['LeftHand', 'RightHand']:
         data = NBCChunks(obj)
@@ -809,4 +834,9 @@ if __name__ == '__main__':
     autoencoder_unified = AutoencoderUnified(train_module, train_modules)
     combined = Max(conditionals, autoencoder_unified.output_modules, False)
     output = ConvertToSessions(StandardScale(combined))
-    output.save_config('max_hands')
+    output.save_config('max_hands')'''
+
+    hands = InputModule.load_from_config('max_hands')
+    objs = InputModule.load_from_config('max_objs')
+    combined = ConcatFeat([objs, hands])
+    combined.save_config('max_hands_max_objs')

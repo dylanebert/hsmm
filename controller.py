@@ -3,6 +3,8 @@ import pandas as pd
 import os
 import sys
 import argparse
+import input_modules
+from input_modules import ConvertToChunks, ConvertToSessions, ReducePCA
 
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 sys.path.append(os.environ['NBC_ROOT'])
@@ -18,20 +20,22 @@ def initialize(fpath):
 def get_encodings(session, type='dev'):
     global hsmm_wrapper
     predictions = hsmm_wrapper.predictions[type]
-    z = hsmm_wrapper.input_module.z[type]
-    steps = hsmm_wrapper.input_module.steps[type]
-    lengths = hsmm_wrapper.input_module.lengths[type]
+    module = ConvertToSessions(ReducePCA(ConvertToChunks(hsmm_wrapper.input_module)))
+    z = module.z[type]
+    steps = module.steps[type]
+    lengths = module.lengths[type]
     data = []
     for i, key in enumerate(steps.keys()):
         if key[0] == session:
             for j in range(int(lengths[i])):
-                 data.append({
+                print(steps[key].shape)
+                data.append({
                     'start_step': int(steps[key][j][0]),
                     'end_step': int(steps[key][j][-1]),
                     'encoding': z[i][j],
                     'label': int(predictions[i][j]),
                     'timestamp': get_timestamp(session, steps[key][j][0])
-                 })
+                })
     return pd.DataFrame(data)
 
 def get_predictions(session, type='dev'):
