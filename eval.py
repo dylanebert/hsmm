@@ -11,24 +11,37 @@ sys.path.append(NBC_ROOT)
 import config
 
 class OddManOut:
-    def __init__(self, nbc_wrapper, hsmm_wrapper, type='dev'):
-        self.args = hsmm_wrapper.args
-        self.nbc_wrapper = nbc_wrapper
+    def __init__(self, hsmm_wrapper, type='dev'):
         self.hsmm_wrapper = hsmm_wrapper
+        self.input_module = hsmm_wrapper.input_module
         self.type = type
         self.get_eval()
 
     def get_eval(self):
-        if self.try_load_cached():
+        if self.load():
             return
-        self.keys = list(self.nbc_wrapper.nbc.steps[self.type].keys())
-        self.steps = list(self.nbc_wrapper.nbc.steps[self.type].values())
-        self.sessions = np.array([key[0] for key in self.keys])
-        self.indices = self.hsmm_wrapper.sequences[self.type][2]
         self.predictions = self.hsmm_wrapper.predictions[self.type]
         self.rle()
         self.get_questions()
-        self.cache()
+        self.save()
+
+    def load(self):
+        fpath = NBC_ROOT + 'cache/eval/{}.json'.format(self.hsmm_wrapper.fname)
+        if not os.path.exists(fpath):
+            return False
+        with open(fpath) as f:
+            serialized = json.load(f)
+        self.questions = serialized['questions']
+        self.answers = serialized['answers']
+        print('loaded eval from {}'.format(fpath))
+        return True
+
+    def save(self):
+        fpath = NBC_ROOT + 'cache/eval/{}.json'.format(self.hsmm_wrapper.fname)
+        serialized = {'questions': self.questions, 'answers': self.answers}
+        with open(fpath, 'w+') as f:
+            json.dump(serialized, f)
+        print('saved eval to {}'.format(fpath))
 
     def evaluate(self, fill_unknown=True):
         correct = 0
@@ -46,52 +59,22 @@ class OddManOut:
             total += 1
         print(correct / total)
 
-    def try_load_cached(self):
-        savefile = config.find_savefile(self.args, 'eval')
-        if savefile is None:
-            return False
-        question_path = NBC_ROOT + 'cache/eval/{}_questions.json'.format(savefile)
-        answer_path = NBC_ROOT + 'cache/eval/{}_answers.json'.format(savefile)
-        with open(question_path) as f:
-            self.questions = json.load(f)
-        with open(answer_path) as f:
-            self.answers = json.load(f)
-        print('loaded cached eval')
-        return True
-
-    def cache(self):
-        savefile = config.generate_savefile(self.args, 'eval')
-        question_path = NBC_ROOT + 'cache/eval/{}_questions.json'.format(savefile)
-        answer_path = NBC_ROOT + 'cache/eval/{}_answers.json'.format(savefile)
-        with open(question_path, 'w+') as f:
-            json.dump(self.questions, f)
-        with open(answer_path, 'w+') as f:
-            json.dump(self.answers, f)
-        print('cached eval')
-
-    def update_answers(self):
-        savefile = config.find_savefile(self.args, 'eval')
-        assert savefile is not None
-        answer_path = NBC_ROOT + 'cache/eval/{}_answers.json'.format(savefile)
-        with open(answer_path, 'w+') as f:
-            json.dump(self.answers, f)
-        print('updated answers')
-
     def get_questions(self):
         questions = []
         for label in np.unique(np.array(self.predictions[0])):
             for i in range(10):
-                sample = self.sample()
+                sample = self.sample(label)
                 question = []
                 for j in range(4):
-                    idx, k = sample[j]
-                    start_step, end_step = int(self.steps[idx][0]), int(self.steps[idx+k][-1])
-                    session = self.sessions[idx]
-                    session_start_step = self.keys[(self.sessions == self.keys[idx][0]).argmax()][1]
-                    start_timestamp = (start_step - session_start_step) / 90.
-                    end_timestamp = (end_step - session_start_step) / 90.
+                    entry = sample[j]
+                    start_step = int(entry['start_step'])
+                    end_step = int(entry['end_step'])
+                    start_timestamp = float(entry['start_timestamp'])
+                    end_timestamp = float(entry['end_timestamp'])
+                    qlabel = entry['label']
+                    session = entry['session']
                     oddmanout = j == 3
-                    question.append((oddmanout, session, start_timestamp, end_timestamp, start_step, end_step))
+                    question.append((oddmanout, session, start_timestamp, end_timestamp, start_step, end_step, qlabel))
                 random.shuffle(question)
                 questions.append((int(label), question))
         random.shuffle(questions)
@@ -112,18 +95,47 @@ class OddManOut:
 
     def rle(self):
         rle_dict = {}
-        for predictions, indices in zip(self.predictions, self.indices):
-            prev_label = predictions[0]
+        for i, (key, steps) in enumerate(self.input_module.steps[self.type].items()):
+            session_start_step = steps[0][0]
+            predictions = self.predictions[i]
+            prev_idx = 0
             k = 1
             for i in range(1, len(predictions)):
+                prev_label = predictions[prev_idx]
                 label = predictions[i]
-                idx = indices[i]
                 if label != prev_label:
-                    if label not in rle_dict:
-                        rle_dict[label] = []
-                    rle_dict[label].append((idx, k))
-                    prev_label = label
-                    k = 1
-                else:
-                    k += 1
+                    start_step = steps[prev_idx][0]
+                    end_step = steps[i-1][-1]
+                    start_timestamp = (start_step - session_start_step) / 90.
+                    end_timestamp = (end_step - session_start_step) / 90.
+                    if prev_label not in rle_dict:
+                        rle_dict[prev_label] = []
+                    item = {
+                        'start_step': start_step,
+                        'end_step': end_step,
+                        'start_timestamp': start_timestamp,
+                        'end_timestamp': end_timestamp,
+                        'session': key[0],
+                        'label': prev_label
+                    }
+                    rle_dict[prev_label].append(item)
+                    prev_idx = i
         self.rle_dict = rle_dict
+
+    def report(self):
+        correct, sum = 0, 0
+        for i in range(len(self.answers)):
+            answer = self.answers[i]
+            question = self.questions[i]
+            gold = (np.array([q[0] for q in question[1]]) == True).argmax()
+            if answer == gold:
+                correct += 1
+            sum += 1
+        print(correct / sum)
+
+if __name__ == '__main__':
+    from hsmm_wrapper import HSMMWrapper
+    hsmm_wrapper = HSMMWrapper('hsmm_max_objs')
+    eval = OddManOut(hsmm_wrapper)
+    print(eval.questions)
+    eval.report()

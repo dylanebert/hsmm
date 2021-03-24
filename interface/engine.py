@@ -14,6 +14,7 @@ NBC_ROOT = os.environ['NBC_ROOT']
 sys.path.append(HSMM_ROOT)
 sys.path.append(NBC_ROOT)
 import controller
+from eval import OddManOut
 
 app = Flask(__name__)
 args = None
@@ -28,13 +29,10 @@ def load_config():
     controller.initialize(fpath)
     return 'success'
 
-'''
+@app.route('/get_eval')
 def get_eval():
-    global args
-    assert args is not None
     hsmm_wrapper = controller.hsmm_wrapper
-    nbc_wrapper = hsmm_wrapper.autoencoder_wrapper.nbc_wrapper
-    eval = OddManOut(nbc_wrapper, hsmm_wrapper)
+    eval = OddManOut(hsmm_wrapper)
     questions = eval.questions
     answers = eval.answers
     for qidx in range(len(answers)):
@@ -42,18 +40,15 @@ def get_eval():
             return json.dumps((qidx, questions[qidx]))
     return 'done'
 
+@app.route('/write_answer')
 def write_answer():
-    global args
-    assert args is not None
     qidx = int(request.args.get('qidx'))
     answer = int(request.args.get('answer'))
     hsmm_wrapper = controller.hsmm_wrapper
-    nbc_wrapper = hsmm_wrapper.autoencoder_wrapper.nbc_wrapper
-    eval = OddManOut(nbc_wrapper, hsmm_wrapper)
+    eval = OddManOut(hsmm_wrapper)
     eval.answers[qidx] = answer
-    eval.update_answers()
+    eval.save()
     return 'success'
-'''
 
 @app.route('/get_sessions')
 def get_sessions():
