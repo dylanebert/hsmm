@@ -782,7 +782,7 @@ if __name__ == '__main__':
     output = ConvertToSessions(StandardScale(autoencoder))
     output.save_config('autoencoder_{}'.format(obj))'''
 
-    conditionals = []
+    '''conditionals = []
     train_modules = []
     inference_modules = []
     for obj in obj_names:
@@ -796,4 +796,17 @@ if __name__ == '__main__':
     autoencoder_unified = AutoencoderUnified(train_module, inference_modules)
     combined = Max(conditionals, autoencoder_unified.output_modules, True)
     output = ConvertToSessions(StandardScale(combined))
-    output.save_config('max_objs_indices')
+    output.save_config('max_objs_indices')'''
+
+    conditionals = []
+    train_modules = []
+    for obj in ['LeftHand', 'RightHand']:
+        data = NBCChunks(obj)
+        preprocessed = MinMax(Clip(data))
+        train_modules.append(preprocessed)
+        conditionals.append(data)
+    train_module = Concat(train_modules)
+    autoencoder_unified = AutoencoderUnified(train_module, train_modules)
+    combined = Max(conditionals, autoencoder_unified.output_modules, False)
+    output = ConvertToSessions(StandardScale(combined))
+    output.save_config('max_hands')
