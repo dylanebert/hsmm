@@ -26,6 +26,7 @@ class OddManOut:
         self.save()
 
     def load(self):
+        return False
         fpath = NBC_ROOT + 'cache/eval/{}.json'.format(self.hsmm_wrapper.fname)
         if not os.path.exists(fpath):
             return False
@@ -118,7 +119,8 @@ class OddManOut:
                         'session': key[0],
                         'label': prev_label
                     }
-                    rle_dict[prev_label].append(item)
+                    if i - prev_idx > 10:
+                        rle_dict[prev_label].append(item)
                     prev_idx = i
         self.rle_dict = rle_dict
 
@@ -135,7 +137,6 @@ class OddManOut:
 
 if __name__ == '__main__':
     from hsmm_wrapper import HSMMWrapper
-    hsmm_wrapper = HSMMWrapper('hsmm_max_objs')
+    hsmm_wrapper = HSMMWrapper('hsmm_max_objs_nclasses=2')
     eval = OddManOut(hsmm_wrapper)
-    print(eval.questions)
     eval.report()
