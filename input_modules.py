@@ -182,7 +182,7 @@ class DirectInputModule(InputModule):
 '''
 leaf
 ---
-wrapper for nbc sliding chunks
+wrapper for nbc sliding chunks (relative velocity)
 '''
 class NBCChunks(InputModule):
     @classmethod
@@ -209,6 +209,48 @@ class NBCChunks(InputModule):
         for k, v in NBCChunks.default_args().items():
             setattr(args, k, v)
         feat = ['{}{}'.format(param, obj) for param in ['relVelX:', 'velY:', 'relVelZ:']]
+        setattr(args, 'nbc_features', feat)
+        nbc = NBC(args)
+        z = {}
+        lengths = {}
+        for type in ['train', 'dev', 'test']:
+            z[type] = np.stack(list(nbc.features[type].values()), axis=0).astype(np.float32)
+            lengths[type] = (np.ones((len(z[type],))) * z[type].shape[1]).astype(int)
+        self.z = z
+        self.lengths = lengths
+        self.steps = nbc.steps
+        self.save()
+
+'''
+leaf
+---
+wrapper for nbc sliding chunks (moving)
+'''
+class NBCChunksMoving(InputModule):
+    @classmethod
+    def default_args(cls):
+        return {
+            'nbc_subsample': 9,
+            'nbc_dynamic_only': True,
+            'nbc_train_sequencing': 'sliding_chunks',
+            'nbc_dev_sequencing': 'sliding_chunks',
+            'nbc_test_sequencing': 'sliding_chunks',
+            'nbc_chunk_size': 10,
+            'nbc_sliding_chunk_stride': 3,
+            'nbc_label_method': 'none',
+            'nbc_features': [],
+            'nbc_output_type': 'classifier',
+            'nbc_preprocessing': ['clip', 'tanh']
+        }
+
+    def __init__(self, obj):
+        self.obj = obj
+        if self.load():
+            return
+        args = Args()
+        for k, v in NBCChunks.default_args().items():
+            setattr(args, k, v)
+        feat = ['moving:{}'.format(obj)]
         setattr(args, 'nbc_features', feat)
         nbc = NBC(args)
         z = {}
@@ -706,6 +748,8 @@ def serialize_configuration(module):
     #leaves
     if isinstance(module, NBCChunks):
         return json.dumps({'type': 'NBCChunks', 'obj': module.obj}, indent=4)
+    if isinstance(module, NBCChunksMoving):
+        return json.dumps({'type': 'NBCChunksMoving', 'obj': module.obj}, indent=4)
     if isinstance(module, DirectInputModule):
         return json.dumps({'type': 'DirectInputModule', 'obj': module.obj}, indent=4)
 
@@ -753,6 +797,8 @@ def deserialize_configuration(config):
     #leaves
     if config['type'] == 'NBCChunks':
         return NBCChunks(config['obj'])
+    if config['type'] == 'NBCChunksMoving':
+        return NBCChunksMoving(config['obj'])
     if config['type'] == 'DirectInputconfig':
         return DirectInputconfig(config['obj'])
 
@@ -799,6 +845,9 @@ def report(module):
     print(np.std(module.z['dev']))
 
 if __name__ == '__main__':
+    obj = sys.argv[1]
+    data = NBCChunksMoving(obj)
+
     '''obj = sys.argv[1]
     data = NBCChunks(obj)
     preprocessed = MinMax(Clip(data))
@@ -836,7 +885,7 @@ if __name__ == '__main__':
     output = ConvertToSessions(StandardScale(combined))
     output.save_config('max_hands')'''
 
-    hands = InputModule.load_from_config('max_hands')
+    '''hands = InputModule.load_from_config('max_hands')
     objs = InputModule.load_from_config('max_objs')
     combined = ConcatFeat([objs, hands])
-    combined.save_config('max_hands_max_objs')
+    combined.save_config('max_hands_max_objs')'''
