@@ -31,7 +31,7 @@ require('popper.js')
 require('bootstrap')
 const ipc = require('electron').ipcRenderer
 var qidx;
-var playVideos;
+var timeoutid;
 
 function getEval() {
     playVideos = false;
@@ -39,7 +39,10 @@ function getEval() {
     for(i = 0; i < 4; i++) {
         $('#q' + i).html('')
     }
-    setTimeout(get, 1000)
+    while(timeoutid--) {
+        window.clearTimeout(timeoutid)
+    }
+    get()
 }
 
 function get() {
@@ -69,9 +72,6 @@ function get() {
 }
 
 function loopVideoClip(id, start, end) {
-    if(!playVideos) {
-        return;
-    }
     var vid = document.getElementById(id)
     vid.pause()
     vid.currentTime = start
@@ -79,7 +79,7 @@ function loopVideoClip(id, start, end) {
     if(playPromise !== undefined) {
         playPromise.then(_ => {
             var looptime = (end - start) * 1000
-            setTimeout(function() {
+            timeoutid = window.setTimeout(function() {
                 loopVideoClip(id, start, end)
             }, looptime);
         }).catch(err => {
@@ -107,6 +107,10 @@ $('body').keypress(function(e) {
             console.log(res)
             getEval()
         })
+    }
+
+    if(e.which == 114) {
+        getEval()
     }
 })
 

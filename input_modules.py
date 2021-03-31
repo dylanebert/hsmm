@@ -15,6 +15,7 @@ NBC_ROOT = os.environ['NBC_ROOT']
 sys.path.append(NBC_ROOT)
 from nbc import NBC, obj_names
 from autoencoder import VAE
+from lstm import LSTM
 
 '''
 base class for hsmm input
@@ -148,8 +149,9 @@ class DirectInputModule(InputModule):
             'nbc_preprocessing': ['clip', 'tanh']
         }
 
-    def __init__(self, obj):
+    def __init__(self, obj, subsample):
         self.obj = obj
+        self.subsample = subsample
         if self.load():
             return
         args = Args()
@@ -157,6 +159,7 @@ class DirectInputModule(InputModule):
             setattr(args, k, v)
         feat = ['{}{}'.format(param, obj) for param in ['relVelX:', 'velY:', 'relVelZ:']]
         setattr(args, 'nbc_features', feat)
+        setattr(args, 'nbc_subsample', subsample)
         nbc = NBC(args)
         seq_len = 0
         n_dim = next(iter(nbc.features['train'].values())).shape[-1]
@@ -279,10 +282,25 @@ class Trim(InputModule):
             keys = list(conditional.steps[type].keys())
             for i, key in enumerate(keys):
                 x = conditional.z[type][i]
-                if not np.all(x == 0):
-                    z[type].append(child.z[type][i])
-                    lengths[type].append(child.lengths[type][i])
-                    steps[type][key] = child.steps[type][key]
+                if x.ndim == 1:
+                    if not np.all(x == 0):
+                        z[type].append(child.z[type][i])
+                        lengths[type].append(child.lengths[type][i])
+                        steps[type][key] = child.steps[type][key]
+                else:
+                    x_ = []
+                    steps_ = []
+                    for j in range(x.shape[0]):
+                        if not np.all(x[j] == 0):
+                            x_.append(child.z[type][i,j])
+                            steps_.append(child.steps[type][key][j])
+                    x_ = np.array(x_)
+                    x_padded = np.zeros(child.z[type][i].shape)
+                    if len(x_) > 0:
+                        x_padded[:x_.shape[0]] = x_
+                        z[type].append(x_padded)
+                        steps[type][key] = np.array(steps_)
+                        lengths[type].append(x_.shape[0])
             z[type] = np.array(z[type], dtype=np.float32)
             lengths[type] = np.array(lengths[type], dtype=int)
         self.z = z
@@ -455,6 +473,100 @@ class AutoencoderUnified(InputModule):
         with open(keyspath, 'w+') as f:
             json.dump(keys, f)
         print('saved {} to {}'.format(config, savepath))
+
+'''
+decorator
+---
+use lstm next-frame-prediction to encode to lower dimension
+'''
+class LSTMModule(InputModule):
+    def __init__(self, train_module, inference_module):
+        self.train_module = train_module
+        self.inference_module = inference_module
+        if self.load():
+            return
+        train_dset = tf.data.Dataset.from_tensor_slices((train_module.z['train'], train_module.y['train'])).batch(16)
+        dev_dset = tf.data.Dataset.from_tensor_slices((train_module.z['dev'], train_module.y['dev'])).batch(16)
+        _, seq_len, input_dim = train_in.z['train'].shape
+        self.lstm = LSTM(seq_len, input_dim, 8)
+        self.lstm.compile(optimizer='adam', loss='mse')
+        tmp_path = NBC_ROOT + 'cache/tmp/{}.h5'.format(str(uuid.uuid1()))
+        callbacks = [
+            tf.keras.callbacks.EarlyStopping(patience=25, verbose=1),
+            tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
+        ]
+        self.lstm.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
+        self.lstm(train_module.z['train'][:10])
+        self.lstm.load_weights(tmp_path)
+
+        self.z = {}
+        for type in ['train', 'dev', 'test']:
+            z = self.lstm.encode(inference_in.z[type]).numpy()
+            self.z[type] = z
+        self.lengths = inference_in.lengths
+        self.steps = inference_in.steps
+        self.save()
+
+    def save(self):
+        super().save()
+        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        with open(keyspath) as f:
+            keys = json.load(f)
+        config = serialize_configuration(self)
+        savename = keys[config]
+        weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+        self.lstm.save_weights(weightspath)
+
+    def load(self, load_model=False):
+        res = super().load()
+        if res:
+            if load_model:
+                _, seq_len, input_dim = self.inference_module.z['train'].shape
+                self.lstm = LSTM(seq_len, input_dim, 8)
+                self.lstm(self.inference_module.z['train'][:10])
+                keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+                with open(keyspath) as f:
+                    keys = json.load(f)
+                config = serialize_configuration(self)
+                savename = keys[config]
+                weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+                self.lstm.load_weights(weightspath)
+            return True
+        return False
+
+'''
+decorator
+---
+prepare data for lstm
+'''
+class LSTMInputModule(InputModule):
+    def __init__(self, child, window, stride, lag):
+        self.child = child
+        self.window = window
+        self.stride = stride
+        self.lag = lag
+        self.z = {'train': [], 'dev': [], 'test': []}
+        self.y = {'train': [], 'dev': [], 'test': []}
+        self.steps = {'train': {}, 'dev': {}, 'test': {}}
+        self.lengths = {'train': [], 'dev': [], 'test': []}
+        for type in ['train', 'dev', 'test']:
+            z = child.z[type]
+            lengths = child.lengths[type]
+            for i, key in enumerate(child.steps[type].keys()):
+                z_ = z[i]
+                length = lengths[i]
+                n_chunks = (length - window - lag) // stride
+                for j in range(n_chunks):
+                    x_ = z_[j * stride : j * stride + window]
+                    y_ = z_[j * stride + window + lag]
+                    steps = child.steps[type][key][j * stride : j * stride + window]
+                    self.z[type].append(x_)
+                    self.y[type].append(y_)
+                    self.lengths[type].append(x_.shape[0])
+                    self.steps[type][(key[0], steps[0])] = steps
+            self.z[type] = np.array(self.z[type], dtype=np.float32)
+            self.y[type] = np.array(self.y[type], dtype=np.float32)
+            self.lengths[type] = np.array(self.lengths[type], dtype=int)
 
 '''
 decorator
@@ -751,7 +863,7 @@ def serialize_configuration(module):
     if isinstance(module, NBCChunksMoving):
         return json.dumps({'type': 'NBCChunksMoving', 'obj': module.obj}, indent=4)
     if isinstance(module, DirectInputModule):
-        return json.dumps({'type': 'DirectInputModule', 'obj': module.obj}, indent=4)
+        return json.dumps({'type': 'DirectInputModule', 'obj': module.obj, 'subsample': module.subsample}, indent=4)
 
     #decorators
     if isinstance(module, Trim):
@@ -762,6 +874,12 @@ def serialize_configuration(module):
         train_config = serialize_configuration(module.train_module)
         inference_config = serialize_configuration(module.inference_module)
         return json.dumps({'type': 'Autoencoder', 'train_config': train_config, 'inference_config': inference_config})
+    if isinstance(module, LSTMModule):
+        train_config = serialize_configuration(module.train_module)
+        inference_config = serialize_configuration(module.inference_module)
+        return json.dumps({'type': 'LSTMModule', 'train_config': train_config, 'inference_config': inference_config})
+    if isinstance(module, LSTMInputModule):
+        return json.dumps({'type': 'LSTMInputModule', 'child': serialize_configuration(module.child), 'window': module.window, 'stride': module.stride, 'lag': module.lag})
     if isinstance(module, ConvertToSessions):
         return json.dumps({'type': 'ConvertToSessions', 'child': serialize_configuration(module.child)})
     if isinstance(module, ConvertToChunks):
@@ -800,7 +918,7 @@ def deserialize_configuration(config):
     if config['type'] == 'NBCChunksMoving':
         return NBCChunksMoving(config['obj'])
     if config['type'] == 'DirectInputconfig':
-        return DirectInputconfig(config['obj'])
+        return DirectInputconfig(config['obj'], config['subsample'])
 
     #decorators
     if config['type'] == 'Trim':
@@ -811,6 +929,12 @@ def deserialize_configuration(config):
         train_config = deserialize_configuration(config['train_config'])
         inference_config = deserialize_configuration(config['inference_config'])
         return Autoencoder(train_config, inference_config)
+    if config['type'] == 'LSTMModule':
+        train_config = deserialize_configuration(config['train_config'])
+        inference_config = deserialize_configuration(config['inference_config'])
+        return LSTMModule(train_config, inference_config)
+    if config['type'] == 'LSTMInputModule':
+        return LSTMInputModule(deserialize_configuration(config['child']), config['window'], config['stride'], config['lag'])
     if config['type'] == 'ConvertToSessions':
         return ConvertToSessions(deserialize_configuration(config['child']))
     if config['type'] == 'ConvertToChunks':
@@ -845,8 +969,15 @@ def report(module):
     print(np.std(module.z['dev']))
 
 if __name__ == '__main__':
-    obj = sys.argv[1]
-    data = NBCChunksMoving(obj)
+    obj = 'Apple'
+    data = DirectInputModule(obj, 9)
+    trimmed = Trim(data, data)
+    train_in = LSTMInputModule(trimmed, 10, 1, 5)
+    inference_in = LSTMInputModule(data, 10, 10, 5)
+    lstm = LSTMModule(train_in, inference_in)
+    output = ConvertToSessions(StandardScale(lstm))
+    output.save_config('lstm_{}'.format(obj))
+    report(output)
 
     '''obj = sys.argv[1]
     data = NBCChunks(obj)

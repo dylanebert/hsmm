@@ -37,6 +37,7 @@ def get_eval():
     answers = eval.answers
     for qidx in range(len(answers)):
         if answers[qidx] == None:
+            print((qidx, len(answers)))
             return json.dumps((qidx, questions[qidx]))
     return 'done'
 

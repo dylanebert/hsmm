@@ -167,4 +167,4 @@ class Args:
 
 if __name__ == '__main__':
     config = sys.argv[1]
-    HSMMWrapper(config, device='cpu')
+    HSMMWrapper(config, device='cuda')
