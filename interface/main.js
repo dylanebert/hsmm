@@ -57,6 +57,12 @@ function createWindow() {
                         win.loadFile('eval.html')
                     }
                 },
+                {
+                    label: 'Toggle Data Viwer',
+                    click: () => {
+                        win.loadFile('dataviewer.html')
+                    }
+                },
                 { role: 'reload' },
                 { role: 'forceReload' },
                 { role: 'toggleDevTools' }

@@ -62,7 +62,7 @@ function getSession(session) {
 
 function updateChart(session) {
     $('#left').html(`<p>Loading encodings...</p>`)
-    $.get('http://localhost:5000/get_encodings?session=' + session, function(res) {
+    $.get('http://localhost:5000/get_hsmm_input_encodings?session=' + session, function(res) {
         if(res == 'na') {
             $('#left').html(`<p>No encodings available</p>`)
             return;

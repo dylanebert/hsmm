@@ -5,8 +5,11 @@ import json
 import ast
 import tensorflow as tf
 import uuid
+from tqdm import tqdm
 from sklearn import preprocessing
 from sklearn.decomposition import PCA
+from scipy.spatial.transform import Rotation as R
+import pandas as pd
 
 assert 'HSMM_ROOT' in os.environ, 'set HSMM_ROOT'
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
@@ -16,6 +19,20 @@ sys.path.append(NBC_ROOT)
 from nbc import NBC, obj_names
 from autoencoder import VAE
 from lstm import LSTM
+
+default_nbc_args = {
+    'nbc_subsample': 9,
+    'nbc_dynamic_only': True,
+    'nbc_train_sequencing': 'session',
+    'nbc_dev_sequencing': 'session',
+    'nbc_test_sequencing': 'session',
+    'nbc_chunk_size': 10,
+    'nbc_sliding_chunk_stride': 3,
+    'nbc_label_method': 'none',
+    'nbc_features': [],
+    'nbc_output_type': 'classifier',
+    'nbc_preprocessing': ['clip', 'tanh']
+}
 
 '''
 base class for hsmm input
@@ -132,30 +149,53 @@ leaf
 ---
 features directly from nbc to hsmm, at every timestep
 '''
-class DirectInputModule(InputModule):
-    @classmethod
-    def default_args(cls):
-        return {
-            'nbc_subsample': 9,
-            'nbc_dynamic_only': True,
-            'nbc_train_sequencing': 'session',
-            'nbc_dev_sequencing': 'session',
-            'nbc_test_sequencing': 'session',
-            'nbc_chunk_size': 10,
-            'nbc_sliding_chunk_stride': 3,
-            'nbc_label_method': 'none',
-            'nbc_features': [],
-            'nbc_output_type': 'classifier',
-            'nbc_preprocessing': ['clip', 'tanh']
-        }
-
+class DirectRelPos(InputModule):
     def __init__(self, obj, subsample):
         self.obj = obj
         self.subsample = subsample
         if self.load():
             return
         args = Args()
-        for k, v in DirectInputModule.default_args().items():
+        for k, v in default_nbc_args.items():
+            setattr(args, k, v)
+        feat = ['{}{}'.format(param, obj) for param in ['relPosX:', 'relPosY:', 'relPosZ:']]
+        setattr(args, 'nbc_features', feat)
+        setattr(args, 'nbc_subsample', subsample)
+        nbc = NBC(args)
+        seq_len = 0
+        n_dim = next(iter(nbc.features['train'].values())).shape[-1]
+        for type in ['train', 'dev', 'test']:
+            for feat in nbc.features[type].values():
+                if feat.shape[0] > seq_len:
+                    seq_len = feat.shape[0]
+        z = {}
+        lengths = {}
+        for type in ['train', 'dev', 'test']:
+            z_ = np.zeros((len(nbc.features[type]), seq_len, n_dim))
+            lengths_ = np.zeros((len(nbc.features[type]),)).astype(int)
+            for i, feat in enumerate(nbc.features[type].values()):
+                z_[i, :feat.shape[0], :] = feat
+                lengths_[i] = feat.shape[0]
+            z[type] = z_
+            lengths[type] = lengths_
+        self.z = z
+        self.lengths = lengths
+        self.steps = nbc.steps
+        self.save()
+
+'''
+leaf
+---
+features directly from nbc to hsmm, at every timestep
+'''
+class DirectRelVel(InputModule):
+    def __init__(self, obj, subsample):
+        self.obj = obj
+        self.subsample = subsample
+        if self.load():
+            return
+        args = Args()
+        for k, v in default_nbc_args.items():
             setattr(args, k, v)
         feat = ['{}{}'.format(param, obj) for param in ['relVelX:', 'velY:', 'relVelZ:']]
         setattr(args, 'nbc_features', feat)
@@ -180,6 +220,149 @@ class DirectInputModule(InputModule):
         self.z = z
         self.lengths = lengths
         self.steps = nbc.steps
+        self.save()
+
+'''
+leaf
+---
+same as direct input module, but position
+'''
+class DirectPosition(InputModule):
+    def __init__(self, obj, subsample):
+        self.obj = obj
+        self.subsample = subsample
+        if self.load():
+            return
+        args = Args()
+        for k, v in default_nbc_args.items():
+            setattr(args, k, v)
+        feat = ['{}{}'.format(param, obj) for param in ['posX:', 'posY:', 'posZ:']]
+        setattr(args, 'nbc_features', feat)
+        setattr(args, 'nbc_subsample', subsample)
+        nbc = NBC(args)
+        seq_len = 0
+        n_dim = next(iter(nbc.features['train'].values())).shape[-1]
+        for type in ['train', 'dev', 'test']:
+            for feat in nbc.features[type].values():
+                if feat.shape[0] > seq_len:
+                    seq_len = feat.shape[0]
+        z = {}
+        lengths = {}
+        for type in ['train', 'dev', 'test']:
+            z_ = np.zeros((len(nbc.features[type]), seq_len, n_dim))
+            lengths_ = np.zeros((len(nbc.features[type]),)).astype(int)
+            for i, feat in enumerate(nbc.features[type].values()):
+                z_[i, :feat.shape[0], :] = feat
+                lengths_[i] = feat.shape[0]
+            z[type] = z_
+            lengths[type] = lengths_
+        self.z = z
+        self.lengths = lengths
+        self.steps = nbc.steps
+        self.save()
+
+'''
+leaf
+---
+head position and rotation, typically a utility for other computations
+'''
+class HeadData(InputModule):
+    def __init__(self, subsample):
+        self.subsample = subsample
+        if self.load():
+            return
+        args = Args()
+        for k, v in default_nbc_args.items():
+            setattr(args, k, v)
+        feat = ['posX:Head', 'posY:Head', 'posZ:Head', 'rotX:Head', 'rotY:Head', 'rotZ:Head', 'rotW:Head']
+        setattr(args, 'nbc_features', feat)
+        setattr(args, 'nbc_subsample', subsample)
+        nbc = NBC(args)
+        seq_len = 0
+        n_dim = next(iter(nbc.features['train'].values())).shape[-1]
+        for type in ['train', 'dev', 'test']:
+            for feat in nbc.features[type].values():
+                if feat.shape[0] > seq_len:
+                    seq_len = feat.shape[0]
+        z = {}
+        lengths = {}
+        for type in ['train', 'dev', 'test']:
+            z_ = np.zeros((len(nbc.features[type]), seq_len, n_dim))
+            lengths_ = np.zeros((len(nbc.features[type]),)).astype(int)
+            for i, feat in enumerate(nbc.features[type].values()):
+                z_[i, :feat.shape[0], :] = feat
+                lengths_[i] = feat.shape[0]
+            z[type] = z_
+            lengths[type] = lengths_
+        self.z = z
+        self.lengths = lengths
+        self.steps = nbc.steps
+        self.save()
+
+'''
+decorator
+---
+rotate position around the y axis w.r.t. the head
+'''
+class LookPosition(InputModule):
+    def __init__(self, child):
+        self.child = child
+        if self.load():
+            return
+        head_data = HeadData(child.subsample)
+        self.z = {}
+        for type in ['train', 'dev', 'test']:
+            obj_pos = child.z[type]
+            head_pos = head_data.z[type][:,:,:3]
+            head_rot = head_data.z[type][:,:,3:]
+
+            obj_computed = np.zeros(obj_pos.shape)
+            for i in tqdm(range(obj_pos.shape[0])):
+                for j in range(obj_pos.shape[1]):
+                    if np.all(head_rot[i,j] == 0):
+                        continue
+                    head_pos_ = head_pos[i,j]
+                    obj_pos_ = obj_pos[i,j]
+                    head_rot_ = R.from_quat(head_rot[i,j])
+                    y_rot = head_rot_.as_euler('xyz', degrees=True)
+                    y_rot = R.from_euler('y', y_rot[1], degrees=True)
+                    obj_computed_ = y_rot.apply(obj_pos_ - head_pos_, inverse=True)
+                    obj_computed[i,j] = obj_computed_
+            self.z[type] = obj_computed
+        self.lengths = child.lengths
+        self.steps = child.steps
+        self.save()
+
+'''
+decorator
+---
+rotate velocity around the y axis w.r.t. the head
+'''
+class LookVelocity(InputModule):
+    def __init__(self, child):
+        self.child = child
+        if self.load():
+            return
+        head_data = HeadData(child.child.subsample)
+        self.z = {}
+        for type in ['train', 'dev', 'test']:
+            obj_vel = child.z[type]
+            head_rot = head_data.z[type][:,:,3:]
+
+            obj_computed = np.zeros(obj_vel.shape)
+            for i in tqdm(range(obj_vel.shape[0])):
+                for j in range(obj_vel.shape[1]):
+                    if np.all(head_rot[i,j] == 0):
+                        continue
+                    obj_vel_ = obj_vel[i,j]
+                    head_rot_ = R.from_quat(head_rot[i,j])
+                    y_rot = head_rot_.as_euler('xyz', degrees=True)
+                    y_rot = R.from_euler('y', y_rot[1], degrees=True)
+                    obj_computed_ = y_rot.apply(obj_vel_, inverse=True)
+                    obj_computed[i,j] = obj_computed_
+            self.z[type] = obj_computed
+        self.lengths = child.lengths
+        self.steps = child.steps
         self.save()
 
 '''
@@ -265,6 +448,28 @@ class NBCChunksMoving(InputModule):
         self.lengths = lengths
         self.steps = nbc.steps
         self.save()
+
+'''
+decorator
+---
+convert look position to local velocity
+'''
+class PosToVel(InputModule):
+    def __init__(self, child):
+        self.child = child
+        self.z = {}
+        for type in ['train', 'dev', 'test']:
+            pos = child.z[type]
+            vel = np.zeros(pos.shape)
+            n, seq_len, n_dim = pos.shape
+            for i in range(n):
+                for j in range(n_dim):
+                    x = pos[i,:,j]
+                    v = pd.Series(x).diff().rolling(5).mean().fillna(0).to_numpy()
+                    vel[i,:,j] = v
+            self.z[type] = vel
+        self.lengths = child.lengths
+        self.steps = child.steps
 
 '''
 decorator
@@ -569,6 +774,56 @@ class LSTMInputModule(InputModule):
             self.lengths[type] = np.array(self.lengths[type], dtype=int)
 
 '''
+leaf
+---
+custom engineered layer
+'''
+class Engineered(InputModule):
+    def __init__(self):
+        hand_inputs = {}
+        for hand in ['LeftHand', 'RightHand']:
+            hand_inputs[hand] = DirectRelVel(hand, 90)
+        obj_inputs = {}
+        for obj in obj_names:
+            obj_inputs[obj] = DirectRelVel(obj, 90)
+        self.z = {'train': [], 'dev': [], 'test': []}
+        self.steps = {'train': {}, 'dev': {}, 'test': {}}
+        for type in ['train', 'dev', 'test']:
+            for i, key in enumerate(hand_inputs['LeftHand'].steps[type].keys()):
+                obj_seqs = []
+                for obj, obj_input in obj_inputs.items():
+                    obj_seqs.append(obj_input.z[type][i])
+                obj_seqs = np.stack(obj_seqs, axis=0)
+                obj_velocities = np.linalg.norm(obj_seqs, axis=-1)
+                max_obj = obj_velocities.max(axis=0)
+                obj_moving = max_obj > 1e-1
+
+                hand_seqs = []
+                for hand, hand_input in hand_inputs.items():
+                    hand_seqs.append(hand_input.z[type][i][:,2])
+                def get_max(a, axis=None):
+                    amax = a.max(axis)
+                    amin = a.min(axis)
+                    return np.where(-amin > amax, amin, amax)
+                hand_seqs = np.stack(hand_seqs, axis=0)
+                max_hand = get_max(hand_seqs, axis=0)
+                put = np.logical_and(max_hand > 2e-1, obj_moving)
+                pick = np.logical_and(max_hand < -2e-1, obj_moving)
+                hand_motion = np.zeros(max_hand.shape)
+                hand_motion[put] = 1
+                hand_motion[pick] = -1
+                print(hand_motion)
+
+                vec = np.zeros((hand_motion.shape[0], 2))
+                vec[:,0] = hand_motion
+                vec[:,1] = obj_moving
+
+                self.z[type].append(vec)
+                self.steps[type][key] = hand_inputs['LeftHand'].steps[type][key][:,np.newaxis]
+            self.z[type] = np.array(self.z[type], dtype=np.float32)
+        self.lengths = hand_inputs['LeftHand'].lengths
+
+'''
 decorator
 ---
 convert data to session sequences
@@ -626,7 +881,10 @@ class ConvertToChunks(InputModule):
                     steps = child.steps[type][key][j]
                     self.z[type].append(z)
                     self.lengths[type].append(1)
-                    self.steps[type][(key[0], steps[0])] = steps
+                    try:
+                        self.steps[type][(key[0], steps[0])] = steps
+                    except:
+                        self.steps[type][(key[0], steps)] = steps
             self.z[type] = np.array(self.z[type], dtype=np.float32)
             self.lengths[type] = np.array(self.lengths[type], dtype=int)
 
@@ -680,6 +938,28 @@ class MinMax(InputModule):
                 self.z[type][:,i,:] = np.clip(scalers[i].transform(child.z[type][:,i,:]), 0., 1.)
         self.steps = child.steps
         self.lengths = child.lengths
+
+'''
+decorator
+---
+preprocess velocities
+'''
+class PreprocessVelocity(InputModule):
+    def __init__(self, child):
+        #try normalized direction of motion + magnitude of motion
+        self.child = child
+        self.z = {}
+        for type in ['train', 'dev', 'test']:
+            z = child.z[type][:,:,2]
+            z_positive = z > .03
+            z_negative = z < -.03
+            any_motion = np.abs(z) > .001
+            vec = np.zeros((z.shape[0], z.shape[1], 1))
+            #vec[:,:,0] = z_positive.astype(int) * 2 - z_negative.astype(int) * 2
+            vec[:,:,0] = any_motion.astype(int) * 2
+            self.z[type] = vec
+        self.lengths = child.lengths
+        self.steps = child.steps
 
 '''
 decorator
@@ -748,83 +1028,26 @@ composite
 get max at magnitude at each index
 '''
 class Max(InputModule):
-    def __init__(self, conditionals, children, add_indices):
-        self.conditionals = conditionals
+    def __init__(self, children):
         self.children = children
-        self.add_indices = add_indices
-        if self.load():
-            return
-
-        z_cond = {}
-        z = {}
-        assert len(conditionals) == len(children)
-        for type in ['train', 'dev', 'test']:
-            z_cond_ = []
-            z_ = []
-            for i in range(len(conditionals)):
-                z_cond_.append(conditionals[i].z[type])
-                z_.append(children[i].z[type])
-            z_cond_ = np.stack(z_cond_, axis=1)
-            z_ = np.stack(z_, axis=1)
-            z_cond[type] = z_cond_
-            z[type] = z_
 
         self.z = {}
-        self.max_indices = {}
         self.steps = children[0].steps
         self.lengths = children[0].lengths
+
+        z = {'train': [], 'dev': [], 'test': []}
         for type in ['train', 'dev', 'test']:
-            magnitudes = np.linalg.norm(z_cond[type], axis=(2, 3))
-            max_indices = np.argmax(magnitudes, axis=1)
-            print(np.unique(max_indices, return_counts=True)[1])
+            for child in children:
+                z[type].append(child.z[type])
+            z[type] = np.stack(z[type], axis=1)
 
-            max_z = []
-            max_steps = []
-            max_lengths = []
-            for i in range(z[type].shape[0]):
-                max_z.append(z[type][i, max_indices[i], :])
-            max_z = np.array(max_z)
-
-            if add_indices:
-                one_hot = []
-                n_objs = len(conditionals)
-                for i in range(z[type].shape[0]):
-                    v = magnitudes[i, max_indices[i]]
-                    vec = np.zeros((n_objs,))
-                    if v > 0.:
-                        vec[max_indices[i]] = 1
-                    one_hot.append(vec)
-                one_hot = np.array(one_hot)
-                max_z = np.concatenate((max_z, one_hot), axis=-1)
-
-            self.z[type] = max_z
-            self.max_indices[type] = max_indices
-        self.save()
-
-    def save(self):
-        super().save()
-        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
-        with open(keyspath) as f:
-            keys = json.load(f)
-        config = serialize_configuration(self)
-        savename = keys[config]
-        indicespath = NBC_ROOT + 'cache/input_modules/{}_indices.json'.format(savename)
-        with open(indicespath, 'w+') as f:
-            json.dump(serialize_feature(self.max_indices), f)
-
-    def load(self):
-        res = super().load()
-        if res:
-            keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
-            with open(keyspath) as f:
-                keys = json.load(f)
-            config = serialize_configuration(self)
-            savename = keys[config]
-            indicespath = NBC_ROOT + 'cache/input_modules/{}_indices.json'.format(savename)
-            with open(indicespath) as f:
-                self.max_indices = deserialize_feature(json.load(f))
-            return True
-        return False
+        for type in ['train', 'dev', 'test']:
+            def get_max(a, axis=None):
+                amax = a.max(axis)
+                amin = a.min(axis)
+                return np.where(-amin > amax, amin, amax)
+            max_data = get_max(z[type], axis=1)
+            self.z[type] = max_data
 
 #-----------------------utility functions-----------------------
 class Args:
@@ -862,10 +1085,27 @@ def serialize_configuration(module):
         return json.dumps({'type': 'NBCChunks', 'obj': module.obj}, indent=4)
     if isinstance(module, NBCChunksMoving):
         return json.dumps({'type': 'NBCChunksMoving', 'obj': module.obj}, indent=4)
-    if isinstance(module, DirectInputModule):
-        return json.dumps({'type': 'DirectInputModule', 'obj': module.obj, 'subsample': module.subsample}, indent=4)
+    if isinstance(module, DirectRelPos):
+        return json.dumps({'type': 'DirectRelPos', 'obj': module.obj, 'subsample': module.subsample}, indent=4)
+    if isinstance(module, DirectRelVel):
+        return json.dumps({'type': 'DirectRelVel', 'obj': module.obj, 'subsample': module.subsample}, indent=4)
+    if isinstance(module, DirectPosition):
+        return json.dumps({'type': 'DirectPosition', 'obj': module.obj, 'subsample': module.subsample}, indent=4)
+    if isinstance(module, HeadData):
+        return json.dumps({'type': 'HeadData', 'subsample': module.subsample}, indent=4)
+    if isinstance(module, Engineered):
+        return json.dumps({'type': 'Engineered'})
 
     #decorators
+    if isinstance(module, PosToVel):
+        child_config = serialize_configuration(module.child)
+        return json.dumps({'type': 'PosToVel', 'child': child_config}, indent=4)
+    if isinstance(module, LookPosition):
+        child_config = serialize_configuration(module.child)
+        return json.dumps({'type': 'LookPosition', 'child': child_config}, indent=4)
+    if isinstance(module, LookVelocity):
+        child_config = serialize_configuration(module.child)
+        return json.dumps({'type': 'LookVelocity', 'child': child_config}, indent=4)
     if isinstance(module, Trim):
         conditional_config = serialize_configuration(module.conditional)
         child_config = serialize_configuration(module.child)
@@ -886,6 +1126,8 @@ def serialize_configuration(module):
         return json.dumps({'type': 'ConvertToChunks', 'child': serialize_configuration(module.child)})
     if isinstance(module, StandardScale):
         return json.dumps({'type': 'StandardScale', 'child': serialize_configuration(module.child)})
+    if isinstance(module, PreprocessVelocity):
+        return json.dumps({'type': 'PreprocessVelocity', 'child': serialize_configuration(module.child)})
     if isinstance(module, Clip):
         return json.dumps({'type': 'Clip', 'child': serialize_configuration(module.child)})
     if isinstance(module, MinMax):
@@ -901,9 +1143,8 @@ def serialize_configuration(module):
         children = [serialize_configuration(child) for child in module.children]
         return json.dumps({'type': 'ConcatFeat', 'children': children})
     if isinstance(module, Max):
-        conditionals = [serialize_configuration(conditional) for conditional in module.conditionals]
         children = [serialize_configuration(child) for child in module.children]
-        return json.dumps({'type': 'Max', 'conditionals': conditionals, 'children': children, 'add_indices': module.add_indices})
+        return json.dumps({'type': 'Max', 'children': children})
     if isinstance(module, AutoencoderUnified):
         train_config = serialize_configuration(module.train_module)
         inference_configs = [serialize_configuration(inference_module) for inference_module in module.inference_modules]
@@ -917,10 +1158,27 @@ def deserialize_configuration(config):
         return NBCChunks(config['obj'])
     if config['type'] == 'NBCChunksMoving':
         return NBCChunksMoving(config['obj'])
-    if config['type'] == 'DirectInputconfig':
-        return DirectInputconfig(config['obj'], config['subsample'])
+    if config['type'] == 'DirectRelPos':
+        return DirectRelPos(config['obj'], config['subsample'])
+    if config['type'] == 'DirectRelVel':
+        return DirectRelVel(config['obj'], config['subsample'])
+    if config['type'] == 'DirectPosition':
+        return DirectPosition(config['obj'], config['subsample'])
+    if config['type'] == 'HeadData':
+        return HeadData(config['subsample'])
+    if config['type'] == 'Engineered':
+        return Engineered()
 
     #decorators
+    if config['type'] == 'PosToVel':
+        child = deserialize_configuration(config['child'])
+        return PosToVel(child)
+    if config['type'] == 'LookPosition':
+        child = deserialize_configuration(config['child'])
+        return LookPosition(child)
+    if config['type'] == 'LookVelocity':
+        child = deserialize_configuration(config['child'])
+        return LookVelocity(child)
     if config['type'] == 'Trim':
         conditional = deserialize_configuration(config['conditional'])
         child = deserialize_configuration(config['child'])
@@ -941,6 +1199,8 @@ def deserialize_configuration(config):
         return ConvertToChunks(deserialize_configuration(config['child']))
     if config['type'] == 'StandardScale':
         return StandardScale(deserialize_configuration(config['child']))
+    if config['type'] == 'PreprocessVelocity':
+        return PreprocessVelocity(deserialize_configuration(config['child']))
     if config['type'] == 'Clip':
         return Clip(deserialize_configuration(config['child']))
     if config['type'] == 'MinMax':
@@ -956,9 +1216,8 @@ def deserialize_configuration(config):
         children = [deserialize_configuration(child) for child in config['children']]
         return ConcatFeat(children)
     if config['type'] == 'Max':
-        conditionals = [deserialize_configuration(conditional) for conditional in config['conditionals']]
         children = [deserialize_configuration(child) for child in config['children']]
-        return Max(conditionals, children, config['add_indices'])
+        return Max(children)
     if config['type'] == 'AutoencoderUnified':
         train_config = deserialize_configuration(config['train_config'])
         inference_configs = [deserialize_configuration(inference_config) for inference_config in config['inference_configs']]
@@ -967,18 +1226,39 @@ def report(module):
     print(module.z['dev'].shape)
     print(np.mean(module.z['dev']))
     print(np.std(module.z['dev']))
+    print(next(iter(module.steps['dev'].values())).shape)
 
 if __name__ == '__main__':
-    obj = 'Apple'
-    data = DirectInputModule(obj, 9)
+    subsample = 9
+
+    data = []
+    for obj in obj_names:
+        pos = DirectPosition(obj, subsample)
+        vel = PosToVel(pos)
+        vel = LookVelocity(vel)
+        vel = PreprocessVelocity(vel)
+        data.append(vel)
+    data = Max(data)
+    report(data)
+    data.save_config('max_any_obj_moving')
+
+    #engineered
+    '''engineered = Engineered()
+    report(engineered)
+    engineered.save_config('engineered')'''
+
+    #lstm
+    '''obj = 'Apple'
+    data = DirectRelVel(obj, subsample)
     trimmed = Trim(data, data)
     train_in = LSTMInputModule(trimmed, 10, 1, 5)
     inference_in = LSTMInputModule(data, 10, 10, 5)
     lstm = LSTMModule(train_in, inference_in)
     output = ConvertToSessions(StandardScale(lstm))
     output.save_config('lstm_{}'.format(obj))
-    report(output)
+    report(output)'''
 
+    #autoencoder
     '''obj = sys.argv[1]
     data = NBCChunks(obj)
     preprocessed = MinMax(Clip(data))
@@ -987,6 +1267,7 @@ if __name__ == '__main__':
     output = ConvertToSessions(StandardScale(autoencoder))
     output.save_config('autoencoder_{}'.format(obj))'''
 
+    #unified autoencoder max
     '''conditionals = []
     train_modules = []
     inference_modules = []
@@ -999,10 +1280,11 @@ if __name__ == '__main__':
         inference_modules.append(preprocessed)
     train_module = Concat(train_modules)
     autoencoder_unified = AutoencoderUnified(train_module, inference_modules)
-    combined = Max(conditionals, autoencoder_unified.output_modules, True)
+    combined = Max(conditionals, autoencoder_unified.output_modules, False)
     output = ConvertToSessions(StandardScale(combined))
-    output.save_config('max_objs_indices')'''
+    output.save_config('max_objs')'''
 
+    #unified hand max
     '''conditionals = []
     train_modules = []
     for obj in ['LeftHand', 'RightHand']:
@@ -1016,6 +1298,7 @@ if __name__ == '__main__':
     output = ConvertToSessions(StandardScale(combined))
     output.save_config('max_hands')'''
 
+    #combine max_objs and max_hands
     '''hands = InputModule.load_from_config('max_hands')
     objs = InputModule.load_from_config('max_objs')
     combined = ConcatFeat([objs, hands])

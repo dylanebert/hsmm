@@ -53,17 +53,42 @@ def write_answer():
 
 @app.route('/get_sessions')
 def get_sessions():
-    sessions = list(controller.hsmm_wrapper.input_module.steps['dev'].keys())
+    sessions = list(controller.input_module.steps['dev'].keys())
     return json.dumps(sessions)
 
-@app.route('/get_encodings')
-def get_encodings():
+@app.route('/get_input_data')
+def get_input_data():
+    session = request.args.get('session')
+    z, steps = controller.get_input_data(session)
+    n_points, n_dim = z.shape
+    pal = sns.color_palette('hls', n_dim).as_hex()
+    datasets = []
+    for i in range(n_dim):
+        data = []
+        for j in range(n_points):
+            point = float(z[j,i])
+            data.append(point)
+        dataset = {
+            'data': data,
+            'label': str(i),
+            'borderColor': pal[i],
+            'fill': False
+        }
+        datasets.append(dataset)
+    data = {'labels': steps.astype(str).tolist(), 'datasets': datasets}
+    return json.dumps(data)
+
+@app.route('/get_hsmm_input_encodings')
+def get_hsmm_input_encodings():
     session = request.args.get('session')
     hsmm_wrapper = controller.hsmm_wrapper
-    data = controller.get_encodings(session, 'dev')
+    data = controller.get_hsmm_input_encodings(session, 'dev')
     pal = sns.color_palette('hls', data['label'].max() + 1).as_hex()
     data['x'] = data.apply(lambda row: row['encoding'][0], axis=1)
-    data['y'] = data.apply(lambda row: row['encoding'][1], axis=1)
+    try:
+        data['y'] = data.apply(lambda row: row['encoding'][1], axis=1)
+    except:
+        data['y'] = 0
     datasets = []
     for label, rows in data.groupby('label'):
         dataset = {
@@ -78,6 +103,8 @@ def get_encodings():
 def get_predictions():
     session = request.args.get('session')
     predictions, steps = controller.get_predictions(session, 'dev')
+    if steps.ndim == 1:
+        steps = np.stack((steps, steps + 9), axis=-1)
     datasets = []
     pal = sns.color_palette('hls', controller.hsmm_wrapper.args['n_classes']).as_hex()
     for i, pred in enumerate(predictions):

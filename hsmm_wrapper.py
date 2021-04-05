@@ -54,10 +54,10 @@ class HSMMWrapper:
         self.args = args
         self.device = torch.device(device)
         self.input_module = InputModule.load_from_config(args['input_config'])
-        if self.load():
+        self.n_dim = self.input_module.z['train'].shape[-1]
+        if self.load(True):
             return
         self.data = {}
-        self.n_dim = self.input_module.z['train'].shape[-1]
         for type in ['train', 'dev', 'test']:
             self.data[type] = SemiMarkovDataset(self.input_module.z[type], self.input_module.lengths[type], self.device)
         self.train_unsupervised()
@@ -80,7 +80,8 @@ class HSMMWrapper:
         if not os.path.exists(weights_path) or not os.path.exists(predictions_path):
             return False
         if load_model:
-            assert False
+            self.model = SemiMarkovModule(self.n_dim, self.args['n_classes'], self.args['max_k'], self.args['allow_self_transitions'], self.args['cov_factor']).to(self.device)
+            self.model.load_state_dict(torch.load(weights_path))
         with open(predictions_path) as f:
             self.predictions = json.load(f)
         print('loaded from {}'.format(predictions_path))

@@ -1,0 +1,85 @@
+<html>
+<head>
+    <title>nbcapp</title>
+    <meta charset="UTF-8">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1" crossorigin="anonymous">
+</head>
+<style>
+#vidWrapper {
+    max-width: 960px;
+}
+video {
+    max-width: 100%;
+    height: auto;
+}
+.row {
+    margin-top: 50px;
+}
+</style>
+<body>
+    <div class="container">
+        <div class="row" id="header">
+            <select class="form-select" aria-label="select session" id="sessionSelect">
+                <option selected>Open config and choose session</option>
+            </select>
+        </div>
+        <div class="row">
+            <div class="col-sm-9" id="chartWrapper"></div>
+            <div class="col-sm-3"></div>
+        </div>
+        <div class="row">
+            <div class="col-sm-9" id="vidWrapper"></div>
+            <div class="col-sm-3"></div>
+        </div>
+    </div>
+</body>
+<script>
+window.$ = window.jQuery = require('jquery')
+require('popper.js')
+require('bootstrap')
+var Chart = require('chart.js')
+const ipc = require('electron').ipcRenderer
+
+function updateSessions() {
+    $.get('http://localhost:5000/get_sessions', function(res) {
+        var html = ``
+        var sessions = $.parseJSON(res)
+        $.each(sessions, function(i, session) {
+            html += `<option value="` + session + `">` + session + `</option>`
+        })
+        $('#sessionSelect').html(html)
+        $('#sessionSelect').change(function() {
+            let selected = $('#sessionSelect option:selected')[0]
+            let session = $(selected).val()
+            getSession(session)
+        })
+        $('#sessionSelect').trigger('change')
+    })
+}
+
+function getSession(session) {
+    $('#chartWrapper').html(``).html(`<canvas id="chart"></canvas>`)
+    $.get('http://localhost:5000/get_input_data?session=' + session, function(res) {
+        var data = $.parseJSON(res)
+        var ctx = $('#chart')
+        var chart = new Chart(ctx, {
+            type: 'line',
+            data: data
+        })
+        $('#vidWrapper').html(`
+            <video width="960" height="540" id="vid" controls>
+                <source width="960" height="540" src="https://plunarlabcit.services.brown.edu/videos/` + session + `.mp4" type="video/mp4">
+            </video>
+        `)
+    })
+}
+
+ipc.on('loadConfig', (e, fpath) => {
+    $.get('http://localhost:5000/load_config?fpath=' + fpath, function(res) {
+        if(res == 'success') {
+            updateSessions()
+        }
+    })
+})
+</script>
+</html>

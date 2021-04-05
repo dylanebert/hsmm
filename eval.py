@@ -4,6 +4,7 @@ import random
 import os
 import sys
 import json
+import controller
 
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 NBC_ROOT = os.environ['NBC_ROOT']
@@ -96,7 +97,10 @@ class OddManOut:
     def rle(self):
         rle_dict = {}
         for i, (key, steps) in enumerate(self.input_module.steps[self.type].items()):
-            session_start_step = steps[0][0]
+            try:
+                session_start_step = steps[0][0]
+            except:
+                session_start_step = steps[0]
             predictions = self.predictions[i]
             prev_idx = 0
             k = 1
@@ -104,8 +108,12 @@ class OddManOut:
                 prev_label = predictions[prev_idx]
                 label = predictions[i]
                 if label != prev_label:
-                    start_step = steps[prev_idx][0]
-                    end_step = steps[i-1][-1]
+                    try:
+                        start_step = steps[prev_idx][0]
+                        end_step = steps[i][-1]
+                    except:
+                        start_step = steps[prev_idx]
+                        end_step = steps[i]
                     start_timestamp = (start_step - session_start_step) / 90.
                     end_timestamp = (end_step - session_start_step) / 90.
                     if prev_label not in rle_dict:
@@ -134,8 +142,8 @@ class OddManOut:
         print(correct / sum)
 
 if __name__ == '__main__':
-    from hsmm_wrapper import HSMMWrapper
     config = sys.argv[1]
-    hsmm_wrapper = HSMMWrapper(config)
+    controller.initialize(config)
+    hsmm_wrapper = controller.hsmm_wrapper
     eval = OddManOut(hsmm_wrapper)
     eval.report()
