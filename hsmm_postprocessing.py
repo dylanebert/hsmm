@@ -15,7 +15,7 @@ def merge_similar_states(hsmm_wrapper):
     for i in range(means.shape[0] - 1):
         for j in range(i + 1, means.shape[0]):
             dist = np.linalg.norm(means[i] - means[j])
-            if dist < 1e-1:
+            if dist < 5e-1:
                 if i in merge_map:
                     merge_map[i].append(j)
                 else:
