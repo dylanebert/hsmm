@@ -1229,7 +1229,15 @@ def report(module):
 if __name__ == '__main__':
     subsample = 9
 
-    data = []
+    #hand+obj
+    hand_motion = InputModule.build_from_config('hand_motion')
+    obj_motion = InputModule.build_from_config('obj_motion')
+    data = ConcatFeat((hand_motion, obj_motion))
+    report(data)
+    data.save_config('combined_motion')
+
+    #hand motion
+    '''data = []
     for obj in obj_names:
         if obj not in ['LeftHand', 'RightHand']:
             continue
@@ -1240,8 +1248,9 @@ if __name__ == '__main__':
         data.append(vel)
     data = Max(data)
     report(data)
-    data.save_config('hand_motion')
+    data.save_config('hand_motion')'''
 
+    #obj motion
     '''data = []
     for obj in obj_names:
         if obj in ['Head', 'LeftHand', 'RightHand']:
