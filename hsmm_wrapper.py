@@ -162,6 +162,27 @@ class HSMMWrapper:
         for param in ['mean', 'cov', 'trans', 'lengths']:
             print('{}\n{}\n'.format(param, params[param]))
 
+class VirtualHSMMWrapper:
+    def __init__(self, fname):
+        print('using virtual hsmm')
+        if '/' in fname or '\\' in fname:
+            fname = os.path.basename(fname)
+        fname = fname.replace('.json', '')
+        self.fname = fname
+        with open(NBC_ROOT + 'config/{}.json'.format(fname)) as f:
+            args = json.load(f)
+        self.args = args
+        self.input_module = InputModule.load_from_config(args['input_config'])
+        self.n_dim = self.input_module.z['train'].shape[-1]
+        self.predictions = {'train': [], 'dev': [], 'test': []}
+        for type in ['train', 'dev', 'test']:
+            z = self.input_module.z[type]
+            lengths = self.input_module.lengths[type]
+            for i, length in enumerate(lengths):
+                z_ = np.linalg.norm(z[i][:length], axis=-1)
+                z_ = (z_ > 0).astype(int)
+                self.predictions[type].append(z_)
+
 class Args:
     def __init__(self):
         return

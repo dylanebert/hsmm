@@ -341,8 +341,8 @@ rotate velocity around the y axis w.r.t. the head
 class LookVelocity(InputModule):
     def __init__(self, child):
         self.child = child
-        #if self.load():
-            #return
+        if self.load():
+            return
         head_data = HeadData(child.child.subsample)
         self.z = {}
         for type in ['train', 'dev', 'test']:
@@ -946,18 +946,16 @@ preprocess velocities
 '''
 class PreprocessVelocity(InputModule):
     def __init__(self, child):
-        #try normalized direction of motion + magnitude of motion
         self.child = child
         self.z = {}
         for type in ['train', 'dev', 'test']:
-            z = child.z[type][:,:,2]
-            z_positive = z > .03
-            z_negative = z < -.03
-            any_motion = np.abs(z) > .0001
-            vec = np.zeros((z.shape[0], z.shape[1], 1))
-            #vec[:,:,0] = z_positive.astype(int) * 2 - z_negative.astype(int) * 2
-            vec[:,:,0] = any_motion.astype(int) * 2
-            self.z[type] = vec
+            vel = child.z[type]
+            vel[:,:,0] /= 2
+            vel[:,:,1] *= 2
+            sign = np.sign(vel)
+            log_vel = np.log(1 + (np.abs(vel) / .01))
+            log_vel *= sign
+            self.z[type] = log_vel
         self.lengths = child.lengths
         self.steps = child.steps
 
@@ -1233,6 +1231,8 @@ if __name__ == '__main__':
 
     data = []
     for obj in obj_names:
+        if obj not in ['LeftHand', 'RightHand']:
+            continue
         pos = DirectPosition(obj, subsample)
         vel = PosToVel(pos)
         vel = LookVelocity(vel)
@@ -1240,7 +1240,20 @@ if __name__ == '__main__':
         data.append(vel)
     data = Max(data)
     report(data)
-    data.save_config('max_any_obj_moving')
+    data.save_config('hand_motion')
+
+    '''data = []
+    for obj in obj_names:
+        if obj in ['Head', 'LeftHand', 'RightHand']:
+            continue
+        pos = DirectPosition(obj, subsample)
+        vel = PosToVel(pos)
+        vel = LookVelocity(vel)
+        vel = PreprocessVelocity(vel)
+        data.append(vel)
+    data = Max(data)
+    report(data)
+    data.save_config('obj_motion')'''
 
     #engineered
     '''engineered = Engineered()

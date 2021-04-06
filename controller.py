@@ -10,7 +10,7 @@ from hsmm_postprocessing import merge_similar_states
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 sys.path.append(os.environ['NBC_ROOT'])
 import config
-from hsmm_wrapper import HSMMWrapper
+from hsmm_wrapper import HSMMWrapper, VirtualHSMMWrapper
 
 hsmm_wrapper = None
 input_module = None
@@ -19,6 +19,7 @@ def initialize(fpath):
     global input_module
     global hsmm_wrapper
     if 'hsmm_' in fpath:
+        #hsmm_wrapper = VirtualHSMMWrapper(fpath)
         hsmm_wrapper = HSMMWrapper(fpath, device='cuda')
         merge_similar_states(hsmm_wrapper)
         input_module = hsmm_wrapper.input_module
