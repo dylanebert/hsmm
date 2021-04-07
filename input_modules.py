@@ -760,17 +760,48 @@ class LSTMInputModule(InputModule):
             for i, key in enumerate(child.steps[type].keys()):
                 z_ = z[i]
                 length = lengths[i]
-                n_chunks = (length - window - lag) // stride
-                for j in range(n_chunks):
-                    x_ = z_[j * stride : j * stride + window]
-                    y_ = z_[j * stride + window + lag]
-                    steps = child.steps[type][key][j * stride : j * stride + window]
+                print(length)
+                print(child.steps[type][key].shape)
+                for j in range(0, length - window - lag - 1, stride):
+                    x_ = z_[j : j + window]
+                    y_ = z_[j + window + lag]
+                    steps = child.steps[type][key][j : j + window]
                     self.z[type].append(x_)
                     self.y[type].append(y_)
                     self.lengths[type].append(x_.shape[0])
                     self.steps[type][(key[0], steps[0])] = steps
             self.z[type] = np.array(self.z[type], dtype=np.float32)
             self.y[type] = np.array(self.y[type], dtype=np.float32)
+            self.lengths[type] = np.array(self.lengths[type], dtype=int)
+
+'''
+decorator
+---
+vision-like filtering and expansion for lstm
+'''
+class LSTMPreprocessing(InputModule):
+    def __init__(self, child):
+        self.child = child
+        self.z = {'train': [], 'dev': [], 'test': []}
+        self.lengths = {'train': [], 'dev': [], 'test': []}
+        self.steps = {'train': {}, 'dev': {}, 'test': {}}
+        for type in ['train', 'dev', 'test']:
+            for i, key in enumerate(child.steps[type].keys()):
+                z = child.z[type][i]
+                z_l = z.copy()
+                z_l[:,0] *= -1 #reflect x velocity
+                z_noised = z + np.random.normal(loc=0., scale=.1, size=z.shape)
+                z_l_noised = z_l + np.random.normal(loc=0., scale=.1, size=z_l.shape)
+
+                for z_ in [z, z_l, z_noised, z_l_noised]:
+                    self.z[type].append(z_)
+                length = child.lengths[type][i]
+                for i in range(4):
+                    self.lengths[type].append(length)
+                self.steps[type][(key[0], i)] = child.steps[type][key]
+                for marker in ['reflected', 'noised', 'reflected_noised']:
+                    self.steps[type][(marker, key[0], i)] = child.steps[type][key]
+            self.z[type] = np.array(self.z[type], dtype=np.float32)
             self.lengths[type] = np.array(self.lengths[type], dtype=int)
 
 '''
@@ -922,20 +953,16 @@ class Clip(InputModule):
 decorator
 ---
 scale child to range [0, 1]
-intended for 3d inputs to the autoencoder
+intended for 3d inputs
 '''
 class MinMax(InputModule):
     def __init__(self, child):
         self.child = child
         self.z = {}
-        scalers = []
-        for i in range(child.z['train'].shape[1]):
-            scaler = preprocessing.MinMaxScaler().fit(child.z['train'][:,i,:])
-            scalers.append(scaler)
+        _, seq_len, n_dim = child.z['train'].shape
+        scaler = preprocessing.MinMaxScaler().fit(child.z['train'].reshape((-1, n_dim)))
         for type in ['train', 'dev', 'test']:
-            self.z[type] = np.zeros(child.z[type].shape)
-            for i in range(child.z['train'].shape[1]):
-                self.z[type][:,i,:] = np.clip(scalers[i].transform(child.z[type][:,i,:]), 0., 1.)
+            self.z[type] = scaler.transform(child.z[type].reshape((-1, n_dim))).reshape(child.z[type].shape)
         self.steps = child.steps
         self.lengths = child.lengths
 
@@ -1230,11 +1257,11 @@ if __name__ == '__main__':
     subsample = 9
 
     #hand+obj
-    hand_motion = InputModule.build_from_config('hand_motion')
+    '''hand_motion = InputModule.build_from_config('hand_motion')
     obj_motion = InputModule.build_from_config('obj_motion')
     data = ConcatFeat((hand_motion, obj_motion))
     report(data)
-    data.save_config('combined_motion')
+    data.save_config('combined_motion')'''
 
     #hand motion
     '''data = []
@@ -1270,15 +1297,19 @@ if __name__ == '__main__':
     engineered.save_config('engineered')'''
 
     #lstm
-    '''obj = 'Apple'
-    data = DirectRelVel(obj, subsample)
-    trimmed = Trim(data, data)
-    train_in = LSTMInputModule(trimmed, 10, 1, 5)
-    inference_in = LSTMInputModule(data, 10, 10, 5)
+    obj = 'Apple'
+    data = DirectPosition(obj, subsample)
+    vel = PosToVel(data)
+    preprocessed = PreprocessVelocity(vel)
+    expanded = LSTMPreprocessing(preprocessed)
+    preprocessed_01 = MinMax(preprocessed)
+    expanded_01 = MinMax(expanded)
+    train_in = LSTMInputModule(preprocessed_01, 10, 1, 10)
+    inference_in = LSTMInputModule(preprocessed_01, 10, 10, 10)
     lstm = LSTMModule(train_in, inference_in)
     output = ConvertToSessions(StandardScale(lstm))
+    report(output)
     output.save_config('lstm_{}'.format(obj))
-    report(output)'''
 
     #autoencoder
     '''obj = sys.argv[1]
