@@ -10,6 +10,7 @@ from sklearn import preprocessing
 from sklearn.decomposition import PCA
 from scipy.spatial.transform import Rotation as R
 import pandas as pd
+from collections import OrderedDict
 
 assert 'HSMM_ROOT' in os.environ, 'set HSMM_ROOT'
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
@@ -482,7 +483,7 @@ class Trim(InputModule):
         self.child = child
         z = {'train': [], 'dev': [], 'test': []}
         lengths = {'train': [], 'dev': [], 'test': []}
-        steps = {'train': {}, 'dev': {}, 'test': {}}
+        steps = {'train': OrderedDict(), 'dev': OrderedDict(), 'test': OrderedDict()}
         for type in ['train', 'dev', 'test']:
             keys = list(conditional.steps[type].keys())
             for i, key in enumerate(keys):
@@ -752,7 +753,7 @@ class LSTMInputModule(InputModule):
         self.lag = lag
         self.z = {'train': [], 'dev': [], 'test': []}
         self.y = {'train': [], 'dev': [], 'test': []}
-        self.steps = {'train': {}, 'dev': {}, 'test': {}}
+        self.steps = {'train': OrderedDict(), 'dev': OrderedDict(), 'test': OrderedDict()}
         self.lengths = {'train': [], 'dev': [], 'test': []}
         for type in ['train', 'dev', 'test']:
             z = child.z[type]
@@ -784,7 +785,7 @@ class LSTMPreprocessing(InputModule):
         self.child = child
         self.z = {'train': [], 'dev': [], 'test': []}
         self.lengths = {'train': [], 'dev': [], 'test': []}
-        self.steps = {'train': {}, 'dev': {}, 'test': {}}
+        self.steps = {'train': OrderedDict(), 'dev': OrderedDict(), 'test': OrderedDict()}
         for type in ['train', 'dev', 'test']:
             for i, key in enumerate(child.steps[type].keys()):
                 z = child.z[type][i]
@@ -818,7 +819,7 @@ class Engineered(InputModule):
         for obj in obj_names:
             obj_inputs[obj] = DirectRelVel(obj, 90)
         self.z = {'train': [], 'dev': [], 'test': []}
-        self.steps = {'train': {}, 'dev': {}, 'test': {}}
+        self.steps = {'train': OrderedDict(), 'dev': OrderedDict(), 'test': OrderedDict()}
         for type in ['train', 'dev', 'test']:
             for i, key in enumerate(hand_inputs['LeftHand'].steps[type].keys()):
                 obj_seqs = []
@@ -885,7 +886,7 @@ class ConvertToSessions(InputModule):
             n = len(sessions[type].keys())
             self.z[type] = np.zeros((n, seq_len, n_dim))
             self.lengths[type] = np.zeros((n,))
-            self.steps[type] = {}
+            self.steps[type] = OrderedDict()
             for i, session in enumerate(sessions[type].keys()):
                 z = np.array(sessions[type][session]['z'], dtype=np.float32)
                 steps = np.array(sessions[type][session]['steps'], dtype=int)
@@ -903,7 +904,7 @@ class ConvertToChunks(InputModule):
     def __init__(self, child):
         self.child = child
         self.z = {'train': [], 'dev': [], 'test': []}
-        self.steps = {'train': {}, 'dev': {}, 'test': {}}
+        self.steps = {'train': OrderedDict(), 'dev': OrderedDict(), 'test': OrderedDict()}
         self.lengths = {'train': [], 'dev': [], 'test': []}
         for type in ['train', 'dev', 'test']:
             for i, key in enumerate(child.steps[type].keys()):
@@ -1013,7 +1014,7 @@ class Concat(InputModule):
             return
         self.z = {'train': [], 'dev': [], 'test': []}
         self.lengths = {'train': [], 'dev': [], 'test': []}
-        self.steps = {'train': {}, 'dev': {}, 'test': {}}
+        self.steps = {'train': OrderedDict(), 'dev': OrderedDict(), 'test': OrderedDict()}
         for type in ['train', 'dev', 'test']:
             for child in children:
                 if child.z[type].shape[0] == 0:
@@ -1089,13 +1090,13 @@ def deserialize_feature(serialized):
         x[type] = np.array(serialized[type])
     return x
 def serialize_steps(steps):
-    serialized = {'train': {}, 'dev': {}, 'test': {}}
+    serialized = {'train': OrderedDict(), 'dev': OrderedDict(), 'test': OrderedDict()}
     for type in ['train', 'dev', 'test']:
         for key in steps[type].keys():
             serialized[type][str(key)] = steps[type][key].tolist()
     return serialized
 def deserialize_steps(serialized):
-    steps = {'train': {}, 'dev': {}, 'test': {}}
+    steps = {'train': OrderedDict(), 'dev': OrderedDict(), 'test': OrderedDict()}
     for type in ['train', 'dev', 'test']:
         for key in serialized[type].keys():
             try:
@@ -1302,10 +1303,10 @@ if __name__ == '__main__':
     vel = PosToVel(data)
     preprocessed = PreprocessVelocity(vel)
     expanded = LSTMPreprocessing(preprocessed)
-    preprocessed_01 = MinMax(preprocessed)
-    expanded_01 = MinMax(expanded)
-    train_in = LSTMInputModule(preprocessed_01, 10, 1, 10)
-    inference_in = LSTMInputModule(preprocessed_01, 10, 10, 10)
+    preprocessed_minmax = MinMax(preprocessed)
+    expanded_minmax = MinMax(expanded)
+    train_in = LSTMInputModule(expanded_minmax, 10, 1, 10)
+    inference_in = LSTMInputModule(preprocessed_minmax, 10, 10, 10)
     lstm = LSTMModule(train_in, inference_in)
     output = ConvertToSessions(StandardScale(lstm))
     report(output)
