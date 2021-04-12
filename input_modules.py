@@ -1114,8 +1114,6 @@ concatenate children along axis 0
 class Concat(InputModule):
     def __init__(self, children):
         self.children = children
-        if self.load():
-            return
         self.z = {'train': [], 'dev': [], 'test': []}
         self.lengths = {'train': [], 'dev': [], 'test': []}
         self.steps = {'train': OrderedDict(), 'dev': OrderedDict(), 'test': OrderedDict()}
@@ -1129,7 +1127,6 @@ class Concat(InputModule):
                     self.steps[type][key] = child.steps[type][key]
             self.z[type] = np.concatenate(self.z[type], axis=0)
             self.lengths[type] = np.concatenate(self.lengths[type], axis=0)
-        self.save()
 
 '''
 composite
@@ -1139,8 +1136,6 @@ concatenate children along axis -1
 class ConcatFeat(InputModule):
     def __init__(self, children):
         self.children = children
-        if self.load():
-            return
         self.z = {'train': [], 'dev': [], 'test': []}
         for type in ['train', 'dev', 'test']:
             for child in children:
@@ -1150,7 +1145,6 @@ class ConcatFeat(InputModule):
             self.z[type] = np.concatenate(self.z[type], axis=-1)
         self.steps = children[0].steps
         self.lengths = children[0].lengths
-        self.save()
 
 '''
 composite
@@ -1299,6 +1293,8 @@ def serialize_configuration(module):
         return json.dumps({'type': 'MinMax', 'child': serialize_configuration(module.child)})
     if isinstance(module, ReducePCA):
         return json.dumps({'type': 'ReducePCA', 'child': serialize_configuration(module.child)})
+    if isinstance(module, LSTMPreprocessing):
+        return json.dumps({'type': 'LSTMPreprocessing', 'child': serialize_configuration(module.child)})
 
     #composite
     if isinstance(module, Concat):
@@ -1380,6 +1376,8 @@ def deserialize_configuration(config):
         return MinMax(deserialize_configuration(config['child']))
     if config['type'] == 'ReducePCA':
         return ReducePCA(deserialize_configuration(config['child']))
+    if config['type'] == 'LSTMPreprocessing':
+        return LSTMPreprocessing(deserialize_configuration(config['child']))
 
     #composite
     if config['type'] == 'Concat':
