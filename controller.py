@@ -51,7 +51,7 @@ def get_hsmm_input_encodings(session, type='dev'):
                 try:
                     data.append({
                         'start_step': int(steps[key][j][0]),
-                        'end_step': int(steps[key][j] + 9),
+                        'end_step': int(steps[key][j][-1]),
                         'encoding': z[i][j],
                         'label': int(predictions[i][j]),
                         'timestamp': get_timestamp(session, steps[key][j][0])

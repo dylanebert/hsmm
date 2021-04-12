@@ -698,7 +698,7 @@ class LSTMModule(InputModule):
         self.lstm.compile(optimizer='adam', loss='mse')
         tmp_path = NBC_ROOT + 'cache/tmp/{}.h5'.format(str(uuid.uuid1()))
         callbacks = [
-            tf.keras.callbacks.EarlyStopping(patience=25, verbose=1),
+            tf.keras.callbacks.EarlyStopping(patience=10, verbose=1),
             tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
         ]
         self.lstm.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
@@ -741,6 +741,112 @@ class LSTMModule(InputModule):
         return False
 
 '''
+composite
+---
+trains on train module as in regular regular
+produces multiple encoded train modules, to be accessed with custom accessors
+'''
+class LSTMUnified(InputModule):
+    def __init__(self, train_module, inference_modules):
+        self.train_module = train_module
+        self.inference_modules = inference_modules
+        if self.load():
+            return
+        train_dset = tf.data.Dataset.from_tensor_slices((train_module.z['train'], train_module.y['train'])).batch(16)
+        dev_dset = tf.data.Dataset.from_tensor_slices((train_module.z['dev'], train_module.y['dev'])).batch(16)
+        _, seq_len, input_dim = train_in.z['train'].shape
+        self.lstm = LSTM(seq_len, input_dim, 8)
+        self.lstm.compile(optimizer='adam', loss='mse')
+        tmp_path = NBC_ROOT + 'cache/tmp/{}.h5'.format(str(uuid.uuid1()))
+        callbacks = [
+            tf.keras.callbacks.EarlyStopping(patience=10, verbose=1),
+            tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
+        ]
+        self.lstm.fit(x=train_dset, epochs=1000, shuffle=True, validation_data=dev_dset, callbacks=callbacks, verbose=1)
+        self.lstm(train_module.z['train'][:10])
+        self.lstm.load_weights(tmp_path)
+
+        self.output_modules = []
+        for inference_module in inference_modules:
+            module = InputModule()
+            module.z = {}
+            module.steps = inference_module.steps
+            module.lengths = inference_module.lengths
+            for type in ['train', 'dev', 'test']:
+                module.z[type] = self.lstm.encode(inference_module.z[type]).numpy()
+            self.output_modules.append(module)
+        self.save()
+
+    def load(self, load_model=False):
+        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        if not os.path.exists(keyspath):
+            return False
+        with open(keyspath) as f:
+            keys = json.load(f)
+
+        config = serialize_configuration(self)
+        if config not in keys:
+            return False
+
+        savename = keys[config]
+        self.output_modules = []
+        i = 0
+        while True:
+            savepath = NBC_ROOT + 'cache/input_modules/{}_{}'.format(savename, i)
+            if not os.path.exists(savepath):
+                break
+            with open(savepath) as f:
+                serialized = json.load(f)
+            module = InputModule()
+            module.steps = deserialize_steps(serialized['steps'])
+            module.z = deserialize_feature(serialized['z'])
+            module.lengths = deserialize_feature(serialized['lengths'])
+            self.output_modules.append(module)
+            i += 1
+
+        if load_model:
+            _, seq_len, input_dim = self.inference_modules[0].z['train'].shape
+            self.lstm = LSTM(seq_len, input_dim, 8)
+            self.lstm(self.inference_modules[0].z['train'][:10])
+            weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+            self.lstm.load_weights(weightspath)
+
+        print('loaded {} from {}'.format(config, savepath))
+        return True
+
+    def save(self):
+        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        if os.path.exists(keyspath):
+            with open(keyspath) as f:
+                keys = json.load(f)
+        else:
+            keys = {}
+
+        config = serialize_configuration(self)
+        if config in keys:
+            savename = keys[config]
+        else:
+            savename = str(uuid.uuid1())
+            keys[config] = savename
+
+        for i, module in enumerate(self.output_modules):
+            savepath = NBC_ROOT + 'cache/input_modules/{}_{}'.format(savename, i)
+            serialized = {
+                'z': serialize_feature(module.z),
+                'lengths': serialize_feature(module.lengths),
+                'steps': serialize_steps(module.steps)
+            }
+            with open(savepath, 'w+') as f:
+                json.dump(serialized, f)
+
+        weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+        self.lstm.save_weights(weightspath)
+
+        with open(keyspath, 'w+') as f:
+            json.dump(keys, f)
+        print('saved {} to {}'.format(config, savepath))
+
+'''
 decorator
 ---
 prepare data for lstm
@@ -761,8 +867,6 @@ class LSTMInputModule(InputModule):
             for i, key in enumerate(child.steps[type].keys()):
                 z_ = z[i]
                 length = lengths[i]
-                print(length)
-                print(child.steps[type][key].shape)
                 for j in range(0, length - window - lag - 1, stride):
                     x_ = z_[j : j + window]
                     y_ = z_[j + window + lag]
@@ -885,7 +989,7 @@ class ConvertToSessions(InputModule):
         for type in ['train', 'dev', 'test']:
             n = len(sessions[type].keys())
             self.z[type] = np.zeros((n, seq_len, n_dim))
-            self.lengths[type] = np.zeros((n,))
+            self.lengths[type] = np.zeros((n,)).astype(int)
             self.steps[type] = OrderedDict()
             for i, session in enumerate(sessions[type].keys()):
                 z = np.array(sessions[type][session]['z'], dtype=np.float32)
@@ -1051,7 +1155,7 @@ class ConcatFeat(InputModule):
 '''
 composite
 ---
-get max at magnitude at each index
+get max magnitude at each index
 '''
 class Max(InputModule):
     def __init__(self, children):
@@ -1073,6 +1177,41 @@ class Max(InputModule):
                 amin = a.min(axis)
                 return np.where(-amin > amax, amin, amax)
             max_data = get_max(z[type], axis=1)
+            self.z[type] = max_data
+
+'''
+composite
+---
+get max of children conditioned on max magnitude of conditionals
+'''
+class MaxConditioned(InputModule):
+    def __init__(self, conditionals, children):
+        self.conditionals = conditionals
+        self.children = children
+
+        self.z = {}
+        self.steps = children[0].steps
+        self.lengths = children[0].lengths
+
+        z_cond = {'train': [], 'dev': [], 'test': []}
+        z = {'train': [], 'dev': [], 'test': []}
+        for type in ['train', 'dev', 'test']:
+            for conditional in conditionals:
+                z_cond[type].append(conditional.z[type])
+            for child in children:
+                z[type].append(child.z[type])
+            z_cond[type] = np.stack(z_cond[type], axis=1)
+            z[type] = np.stack(z[type], axis=1)
+
+        for type in ['train', 'dev', 'test']:
+            n, c = z[type].shape[0], z[type].shape[1]
+            z_cond[type] = np.linalg.norm(z_cond[type], axis=-1)
+            z_cond[type] = np.sum(z_cond[type], axis=-1)
+            max_data = []
+            for i in range(n):
+                argmax = np.argmax(z_cond[type][i])
+                max_data.append(z[type][i,argmax,...])
+            max_data = np.array(max_data, dtype=np.float32)
             self.z[type] = max_data
 
 #-----------------------utility functions-----------------------
@@ -1171,10 +1310,18 @@ def serialize_configuration(module):
     if isinstance(module, Max):
         children = [serialize_configuration(child) for child in module.children]
         return json.dumps({'type': 'Max', 'children': children})
+    if isinstance(module, Max):
+        conditionals = [serialize_configuration(conditional) for conditional in module.conditionals]
+        children = [serialize_configuration(child) for child in module.children]
+        return json.dumps({'type': 'MaxConditioned', 'conditionals': conditionals, 'children': children})
     if isinstance(module, AutoencoderUnified):
         train_config = serialize_configuration(module.train_module)
         inference_configs = [serialize_configuration(inference_module) for inference_module in module.inference_modules]
         return json.dumps({'type': 'AutoencoderUnified', 'train_config': train_config, 'inference_configs': inference_configs})
+    if isinstance(module, LSTMUnified):
+        train_config = serialize_configuration(module.train_module)
+        inference_configs = [serialize_configuration(inference_module) for inference_module in module.inference_modules]
+        return json.dumps({'type': 'LSTMUnified', 'train_config': train_config, 'inference_configs': inference_configs})
 def deserialize_configuration(config):
     if isinstance(config, str):
         config = json.loads(config)
@@ -1244,10 +1391,18 @@ def deserialize_configuration(config):
     if config['type'] == 'Max':
         children = [deserialize_configuration(child) for child in config['children']]
         return Max(children)
+    if config['type'] == 'MaxConditioned':
+        conditionals = [deserialize_configuration(child) for child in config['conditionsl']]
+        children = [deserialize_configuration(child) for child in config['children']]
+        return Max(conditionals, children)
     if config['type'] == 'AutoencoderUnified':
         train_config = deserialize_configuration(config['train_config'])
         inference_configs = [deserialize_configuration(inference_config) for inference_config in config['inference_configs']]
         return AutoencoderUnified(train_config, inference_configs)
+    if config['type'] == 'LSTMUnified':
+        train_config = deserialize_configuration(config['train_config'])
+        inference_configs = [deserialize_configuration(inference_config) for inference_config in config['inference_configs']]
+        return LSTMUnified(train_config, inference_configs)
 def report(module):
     print(module.z['dev'].shape)
     print(np.mean(module.z['dev']))
@@ -1297,20 +1452,46 @@ if __name__ == '__main__':
     report(engineered)
     engineered.save_config('engineered')'''
 
+    #lstm objs
+    conditionals = []
+    train_inputs = []
+    inference_inputs = []
+    for obj in obj_names:
+        if obj in ['Head', 'LeftHand', 'RightHand']:
+            continue
+        data = DirectPosition(obj, subsample)
+        vel = PosToVel(data)
+        vel = LookVelocity(vel)
+        conditional = LSTMInputModule(vel, 10, 10, 10)
+        conditionals.append(conditional)
+        vel_minmax = MinMax(vel)
+        inference_input = LSTMInputModule(vel_minmax, 10, 10, 10)
+        inference_inputs.append(inference_input)
+        expanded = LSTMPreprocessing(vel)
+        expanded_minmax = MinMax(expanded)
+        train_inputs.append(expanded_minmax)
+    train_in = Concat(train_inputs)
+    train_in = LSTMInputModule(train_in, 10, 1, 10)
+    lstm = LSTMUnified(train_in, inference_inputs)
+    combined = MaxConditioned(conditionals, lstm.output_modules)
+    output = ConvertToSessions(StandardScale(combined))
+    report(output)
+    output.save_config('lstm')
+
     #lstm
-    obj = 'Apple'
+    '''obj = 'Apple'
     data = DirectPosition(obj, subsample)
     vel = PosToVel(data)
-    preprocessed = PreprocessVelocity(vel)
-    expanded = LSTMPreprocessing(preprocessed)
-    preprocessed_minmax = MinMax(preprocessed)
+    vel = LookVelocity(vel)
+    vel_minmax = MinMax(vel)
+    expanded = LSTMPreprocessing(vel)
     expanded_minmax = MinMax(expanded)
-    train_in = LSTMInputModule(expanded_minmax, 10, 1, 10)
-    inference_in = LSTMInputModule(preprocessed_minmax, 10, 10, 10)
+    train_in = LSTMInputModule(expanded_minmax, 10, 10, 10)
+    inference_in = LSTMInputModule(vel_minmax, 10, 10, 10)
     lstm = LSTMModule(train_in, inference_in)
     output = ConvertToSessions(StandardScale(lstm))
     report(output)
-    output.save_config('lstm_{}'.format(obj))
+    output.save_config('lstm_{}'.format(obj))'''
 
     #autoencoder
     '''obj = sys.argv[1]
