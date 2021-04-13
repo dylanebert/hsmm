@@ -1306,7 +1306,7 @@ def serialize_configuration(module):
     if isinstance(module, Max):
         children = [serialize_configuration(child) for child in module.children]
         return json.dumps({'type': 'Max', 'children': children})
-    if isinstance(module, Max):
+    if isinstance(module, MaxConditioned):
         conditionals = [serialize_configuration(conditional) for conditional in module.conditionals]
         children = [serialize_configuration(child) for child in module.children]
         return json.dumps({'type': 'MaxConditioned', 'conditionals': conditionals, 'children': children})
@@ -1392,7 +1392,7 @@ def deserialize_configuration(config):
     if config['type'] == 'MaxConditioned':
         conditionals = [deserialize_configuration(child) for child in config['conditionsl']]
         children = [deserialize_configuration(child) for child in config['children']]
-        return Max(conditionals, children)
+        return MaxConditioned(conditionals, children)
     if config['type'] == 'AutoencoderUnified':
         train_config = deserialize_configuration(config['train_config'])
         inference_configs = [deserialize_configuration(inference_config) for inference_config in config['inference_configs']]
@@ -1446,14 +1446,14 @@ if __name__ == '__main__':
     data.save_config('engineered_objs')'''
 
     #lstm hand+obj
-    hand_motion = InputModule.build_from_config('lstm_hands')
+    '''hand_motion = InputModule.build_from_config('lstm_hands')
     obj_motion = InputModule.build_from_config('lstm_objs')
     data = ConcatFeat((hand_motion, obj_motion))
     report(data)
-    data.save_config('lstm')
+    data.save_config('lstm')'''
 
     #lstm hands
-    '''conditionals = []
+    conditionals = []
     train_inputs = []
     inference_inputs = []
     for obj in obj_names:
@@ -1476,7 +1476,7 @@ if __name__ == '__main__':
     combined = MaxConditioned(conditionals, lstm.output_modules)
     output = ConvertToSessions(StandardScale(combined))
     report(output)
-    output.save_config('lstm_hands')'''
+    output.save_config('lstm_hands')
 
     #lstm objs
     '''conditionals = []
