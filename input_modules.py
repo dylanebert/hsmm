@@ -1390,7 +1390,7 @@ def deserialize_configuration(config):
         children = [deserialize_configuration(child) for child in config['children']]
         return Max(children)
     if config['type'] == 'MaxConditioned':
-        conditionals = [deserialize_configuration(child) for child in config['conditionsl']]
+        conditionals = [deserialize_configuration(child) for child in config['conditionals']]
         children = [deserialize_configuration(child) for child in config['children']]
         return MaxConditioned(conditionals, children)
     if config['type'] == 'AutoencoderUnified':
