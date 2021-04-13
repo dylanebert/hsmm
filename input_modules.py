@@ -1415,7 +1415,7 @@ if __name__ == '__main__':
     obj_motion = InputModule.build_from_config('obj_motion')
     data = ConcatFeat((hand_motion, obj_motion))
     report(data)
-    data.save_config('combined_motion')'''
+    data.save_config('engineered')'''
 
     #hand motion
     '''data = []
@@ -1429,7 +1429,7 @@ if __name__ == '__main__':
         data.append(vel)
     data = Max(data)
     report(data)
-    data.save_config('hand_motion')'''
+    data.save_config('engineered_hands')'''
 
     #obj motion
     '''data = []
@@ -1443,12 +1443,33 @@ if __name__ == '__main__':
         data.append(vel)
     data = Max(data)
     report(data)
-    data.save_config('obj_motion')'''
+    data.save_config('engineered_objs')'''
 
-    #engineered
-    '''engineered = Engineered()
-    report(engineered)
-    engineered.save_config('engineered')'''
+    #lstm hands
+    conditionals = []
+    train_inputs = []
+    inference_inputs = []
+    for obj in obj_names:
+        if obj not in ['LeftHand', 'RightHand']:
+            continue
+        data = DirectPosition(obj, subsample)
+        vel = PosToVel(data)
+        vel = LookVelocity(vel)
+        conditional = LSTMInputModule(vel, 10, 10, 10)
+        conditionals.append(conditional)
+        vel_minmax = MinMax(vel)
+        inference_input = LSTMInputModule(vel_minmax, 10, 10, 10)
+        inference_inputs.append(inference_input)
+        expanded = LSTMPreprocessing(vel)
+        expanded_minmax = MinMax(expanded)
+        train_inputs.append(expanded_minmax)
+    train_in = Concat(train_inputs)
+    train_in = LSTMInputModule(train_in, 10, 1, 10)
+    lstm = LSTMUnified(train_in, inference_inputs)
+    combined = MaxConditioned(conditionals, lstm.output_modules)
+    output = ConvertToSessions(StandardScale(combined))
+    report(output)
+    output.save_config('lstm_hands')
 
     #lstm objs
     '''conditionals = []
@@ -1474,65 +1495,4 @@ if __name__ == '__main__':
     combined = MaxConditioned(conditionals, lstm.output_modules)
     output = ConvertToSessions(StandardScale(combined))
     report(output)
-    output.save_config('lstm')'''
-
-    #lstm
-    obj = 'Apple'
-    data = DirectPosition(obj, subsample)
-    vel = PosToVel(data)
-    vel = LookVelocity(vel)
-    vel_minmax = MinMax(vel)
-    expanded = LSTMPreprocessing(vel)
-    expanded_minmax = MinMax(expanded)
-    train_in = LSTMInputModule(expanded_minmax, 10, 10, 10)
-    inference_in = LSTMInputModule(vel_minmax, 10, 10, 10)
-    lstm = LSTMModule(train_in, inference_in)
-    output = ConvertToSessions(StandardScale(lstm))
-    report(output)
-    output.save_config('lstm_{}'.format(obj))
-
-    #autoencoder
-    '''obj = sys.argv[1]
-    data = NBCChunks(obj)
-    preprocessed = MinMax(Clip(data))
-    trimmed = Trim(data, preprocessed)
-    autoencoder = Autoencoder(trimmed, preprocessed)
-    output = ConvertToSessions(StandardScale(autoencoder))
-    output.save_config('autoencoder_{}'.format(obj))'''
-
-    #unified autoencoder max
-    '''conditionals = []
-    train_modules = []
-    inference_modules = []
-    for obj in obj_names:
-        data = NBCChunks(obj)
-        preprocessed = MinMax(Clip(data))
-        trimmed = Trim(data, preprocessed)
-        conditionals.append(data)
-        train_modules.append(trimmed)
-        inference_modules.append(preprocessed)
-    train_module = Concat(train_modules)
-    autoencoder_unified = AutoencoderUnified(train_module, inference_modules)
-    combined = Max(conditionals, autoencoder_unified.output_modules, False)
-    output = ConvertToSessions(StandardScale(combined))
-    output.save_config('max_objs')'''
-
-    #unified hand max
-    '''conditionals = []
-    train_modules = []
-    for obj in ['LeftHand', 'RightHand']:
-        data = NBCChunks(obj)
-        preprocessed = MinMax(Clip(data))
-        train_modules.append(preprocessed)
-        conditionals.append(data)
-    train_module = Concat(train_modules)
-    autoencoder_unified = AutoencoderUnified(train_module, train_modules)
-    combined = Max(conditionals, autoencoder_unified.output_modules, False)
-    output = ConvertToSessions(StandardScale(combined))
-    output.save_config('max_hands')'''
-
-    #combine max_objs and max_hands
-    '''hands = InputModule.load_from_config('max_hands')
-    objs = InputModule.load_from_config('max_objs')
-    combined = ConcatFeat([objs, hands])
-    combined.save_config('max_hands_max_objs')'''
+    output.save_config('lstm_objs')'''
