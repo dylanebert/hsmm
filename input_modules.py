@@ -754,7 +754,7 @@ class LSTMUnified(InputModule):
             return
         train_dset = tf.data.Dataset.from_tensor_slices((train_module.z['train'], train_module.y['train'])).batch(16)
         dev_dset = tf.data.Dataset.from_tensor_slices((train_module.z['dev'], train_module.y['dev'])).batch(16)
-        _, seq_len, input_dim = train_in.z['train'].shape
+        _, seq_len, input_dim = train_module.z['train'].shape
         self.lstm = LSTM(seq_len, input_dim, 8)
         self.lstm.compile(optimizer='adam', loss='mse')
         tmp_path = NBC_ROOT + 'cache/tmp/{}.h5'.format(str(uuid.uuid1()))
