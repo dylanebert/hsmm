@@ -1410,96 +1410,103 @@ def report(module):
 if __name__ == '__main__':
     subsample = 9
 
-    #hand+obj
-    '''hand_motion = InputModule.build_from_config('engineered_hands')
-    obj_motion = InputModule.build_from_config('engineered_objs')
-    data = ConcatFeat((hand_motion, obj_motion))
-    report(data)
-    data.save_config('engineered')'''
+    def combined_motion():
+        hand_motion = InputModule.build_from_config('engineered_hands')
+        obj_motion = InputModule.build_from_config('engineered_objs')
+        data = ConcatFeat((hand_motion, obj_motion))
+        report(data)
+        data.save_config('engineered')
 
-    #hand motion
-    '''data = []
-    for obj in obj_names:
-        if obj not in ['LeftHand', 'RightHand']:
-            continue
-        pos = DirectPosition(obj, subsample)
-        vel = PosToVel(pos)
-        vel = LookVelocity(vel)
-        vel = PreprocessVelocity(vel)
-        data.append(vel)
-    data = Max(data)
-    report(data)
-    data.save_config('engineered_hands')'''
+    def hand_motion():
+        data = []
+        for obj in obj_names:
+            if obj not in ['LeftHand', 'RightHand']:
+                continue
+            pos = DirectPosition(obj, subsample)
+            vel = PosToVel(pos)
+            vel = LookVelocity(vel)
+            vel = PreprocessVelocity(vel)
+            data.append(vel)
+        data = Max(data)
+        report(data)
+        data.save_config('engineered_hands')
 
-    #obj motion
-    '''data = []
-    for obj in obj_names:
-        if obj in ['Head', 'LeftHand', 'RightHand']:
-            continue
-        pos = DirectPosition(obj, subsample)
-        vel = PosToVel(pos)
-        vel = LookVelocity(vel)
-        vel = PreprocessVelocity(vel)
-        data.append(vel)
-    data = Max(data)
-    report(data)
-    data.save_config('engineered_objs')'''
+    def obj_motion():
+        data = []
+        for obj in obj_names:
+            if obj in ['Head', 'LeftHand', 'RightHand']:
+                continue
+            pos = DirectPosition(obj, subsample)
+            vel = PosToVel(pos)
+            vel = LookVelocity(vel)
+            vel = PreprocessVelocity(vel)
+            data.append(vel)
+        data = Max(data)
+        report(data)
+        data.save_config('engineered_objs')
 
-    #lstm hand+obj
-    hand_motion = InputModule.build_from_config('lstm_hands')
-    obj_motion = InputModule.build_from_config('lstm_objs')
-    data = ConcatFeat((hand_motion, obj_motion))
-    report(data)
-    data.save_config('lstm')
+    def lstm_combined():
+        hand_motion = InputModule.build_from_config('lstm_hands')
+        obj_motion = InputModule.build_from_config('lstm_objs')
+        data = ConcatFeat((hand_motion, obj_motion))
+        report(data)
+        data.save_config('lstm')
 
-    #lstm hands
-    '''conditionals = []
-    train_inputs = []
-    inference_inputs = []
-    for obj in obj_names:
-        if obj not in ['LeftHand', 'RightHand']:
-            continue
-        data = DirectPosition(obj, subsample)
-        vel = PosToVel(data)
-        vel = LookVelocity(vel)
-        conditional = LSTMInputModule(vel, 10, 10, 10)
-        conditionals.append(conditional)
-        vel_minmax = MinMax(vel)
-        inference_input = LSTMInputModule(vel_minmax, 10, 10, 10)
-        inference_inputs.append(inference_input)
-        expanded = LSTMPreprocessing(vel)
-        expanded_minmax = MinMax(expanded)
-        train_inputs.append(expanded_minmax)
-    train_in = Concat(train_inputs)
-    train_in = LSTMInputModule(train_in, 10, 1, 10)
-    lstm = LSTMUnified(train_in, inference_inputs)
-    combined = MaxConditioned(conditionals, lstm.output_modules)
-    output = ConvertToSessions(StandardScale(combined))
-    report(output)
-    output.save_config('lstm_hands')'''
+    def lstm_hands():
+        conditionals = []
+        train_inputs = []
+        inference_inputs = []
+        for obj in obj_names:
+            if obj not in ['LeftHand', 'RightHand']:
+                continue
+            data = DirectPosition(obj, subsample)
+            vel = PosToVel(data)
+            vel = LookVelocity(vel)
+            conditional = LSTMInputModule(vel, 10, 10, 10)
+            conditionals.append(conditional)
+            vel_minmax = MinMax(vel)
+            inference_input = LSTMInputModule(vel_minmax, 10, 10, 10)
+            inference_inputs.append(inference_input)
+            expanded = LSTMPreprocessing(vel)
+            expanded_minmax = MinMax(expanded)
+            train_inputs.append(expanded_minmax)
+        train_in = Concat(train_inputs)
+        train_in = LSTMInputModule(train_in, 10, 1, 10)
+        lstm = LSTMUnified(train_in, inference_inputs)
+        combined = MaxConditioned(conditionals, lstm.output_modules)
+        output = ConvertToSessions(StandardScale(combined))
+        report(output)
+        output.save_config('lstm_hands')
 
-    #lstm objs
-    '''conditionals = []
-    train_inputs = []
-    inference_inputs = []
-    for obj in obj_names:
-        if obj in ['Head', 'LeftHand', 'RightHand']:
-            continue
-        data = DirectPosition(obj, subsample)
-        vel = PosToVel(data)
-        vel = LookVelocity(vel)
-        conditional = LSTMInputModule(vel, 10, 10, 10)
-        conditionals.append(conditional)
-        vel_minmax = MinMax(vel)
-        inference_input = LSTMInputModule(vel_minmax, 10, 10, 10)
-        inference_inputs.append(inference_input)
-        expanded = LSTMPreprocessing(vel)
-        expanded_minmax = MinMax(expanded)
-        train_inputs.append(expanded_minmax)
-    train_in = Concat(train_inputs)
-    train_in = LSTMInputModule(train_in, 10, 1, 10)
-    lstm = LSTMUnified(train_in, inference_inputs)
-    combined = MaxConditioned(conditionals, lstm.output_modules)
-    output = ConvertToSessions(StandardScale(combined))
-    report(output)
-    output.save_config('lstm_objs')'''
+    def lstm_objs():
+        conditionals = []
+        train_inputs = []
+        inference_inputs = []
+        for obj in obj_names:
+            if obj in ['Head', 'LeftHand', 'RightHand']:
+                continue
+            data = DirectPosition(obj, subsample)
+            vel = PosToVel(data)
+            vel = LookVelocity(vel)
+            conditional = LSTMInputModule(vel, 10, 10, 10)
+            conditionals.append(conditional)
+            vel_minmax = MinMax(vel)
+            inference_input = LSTMInputModule(vel_minmax, 10, 10, 10)
+            inference_inputs.append(inference_input)
+            expanded = LSTMPreprocessing(vel)
+            expanded_minmax = MinMax(expanded)
+            train_inputs.append(expanded_minmax)
+        train_in = Concat(train_inputs)
+        train_in = LSTMInputModule(train_in, 10, 1, 10)
+        lstm = LSTMUnified(train_in, inference_inputs)
+        combined = MaxConditioned(conditionals, lstm.output_modules)
+        output = ConvertToSessions(StandardScale(combined))
+        report(output)
+        output.save_config('lstm_objs')
+
+    lstm_objs()
+    lstm_hands()
+    lstm_combined()
+    obj_motion()
+    hand_motion()
+    combined_motion()
