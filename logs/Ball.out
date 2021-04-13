@@ -1,0 +1,18 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 926585
+##  Job Name : Ball
+##  Nodelist : node1129
+##      CPUs : 4
+##  Mem/Node : 16384 MB
+## Directory : /gpfs/data/epavlick/debert/hsmm
+##   Started : Thu Mar 25 12:58:18 EDT 2021
+###############################################################################
+Ball
+splitting sequences
+featurizing
+generating labels
+cached nbc
+saved {
+    "type": "NBCChunksMoving",
+    "obj": "Ball"
+} to /users/debert/data/datasets/nbc/cache/input_modules/7a6cc7e4-8d8d-11eb-ac1c-ac1f6b1b79d4.json

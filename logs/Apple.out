@@ -1,0 +1,18 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 926584
+##  Job Name : Apple
+##  Nodelist : node1128
+##      CPUs : 4
+##  Mem/Node : 16384 MB
+## Directory : /gpfs/data/epavlick/debert/hsmm
+##   Started : Thu Mar 25 12:58:18 EDT 2021
+###############################################################################
+Apple
+splitting sequences
+featurizing
+generating labels
+cached nbc
+saved {
+    "type": "NBCChunksMoving",
+    "obj": "Apple"
+} to /users/debert/data/datasets/nbc/cache/input_modules/8aed9710-8d8d-11eb-bd48-ac1f6b1b7b3c.json

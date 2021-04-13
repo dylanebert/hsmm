@@ -1,0 +1,18 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 926593
+##  Job Name : Spoon
+##  Nodelist : node1128
+##      CPUs : 4
+##  Mem/Node : 16384 MB
+## Directory : /gpfs/data/epavlick/debert/hsmm
+##   Started : Thu Mar 25 13:14:26 EDT 2021
+###############################################################################
+Spoon
+splitting sequences
+featurizing
+generating labels
+cached nbc
+saved {
+    "type": "NBCChunksMoving",
+    "obj": "Spoon"
+} to /users/debert/data/datasets/nbc/cache/input_modules/cfcae2be-8d8f-11eb-9075-ac1f6b1b7b3c.json

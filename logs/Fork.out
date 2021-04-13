@@ -1,0 +1,18 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 926591
+##  Job Name : Fork
+##  Nodelist : node1126
+##      CPUs : 4
+##  Mem/Node : 16384 MB
+## Directory : /gpfs/data/epavlick/debert/hsmm
+##   Started : Thu Mar 25 13:13:43 EDT 2021
+###############################################################################
+Fork
+splitting sequences
+featurizing
+generating labels
+cached nbc
+saved {
+    "type": "NBCChunksMoving",
+    "obj": "Fork"
+} to /users/debert/data/datasets/nbc/cache/input_modules/a3e89c90-8d8f-11eb-a9d1-ac1f6b1b7b40.json

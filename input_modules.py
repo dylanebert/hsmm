@@ -1451,7 +1451,7 @@ if __name__ == '__main__':
     engineered.save_config('engineered')'''
 
     #lstm objs
-    conditionals = []
+    '''conditionals = []
     train_inputs = []
     inference_inputs = []
     for obj in obj_names:
@@ -1474,10 +1474,10 @@ if __name__ == '__main__':
     combined = MaxConditioned(conditionals, lstm.output_modules)
     output = ConvertToSessions(StandardScale(combined))
     report(output)
-    output.save_config('lstm')
+    output.save_config('lstm')'''
 
     #lstm
-    '''obj = 'Apple'
+    obj = 'Apple'
     data = DirectPosition(obj, subsample)
     vel = PosToVel(data)
     vel = LookVelocity(vel)
@@ -1489,7 +1489,7 @@ if __name__ == '__main__':
     lstm = LSTMModule(train_in, inference_in)
     output = ConvertToSessions(StandardScale(lstm))
     report(output)
-    output.save_config('lstm_{}'.format(obj))'''
+    output.save_config('lstm_{}'.format(obj))
 
     #autoencoder
     '''obj = sys.argv[1]

@@ -1,0 +1,18 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 926594
+##  Job Name : Toy
+##  Nodelist : node1126
+##      CPUs : 4
+##  Mem/Node : 16384 MB
+## Directory : /gpfs/data/epavlick/debert/hsmm
+##   Started : Thu Mar 25 13:14:26 EDT 2021
+###############################################################################
+Toy
+splitting sequences
+featurizing
+generating labels
+cached nbc
+saved {
+    "type": "NBCChunksMoving",
+    "obj": "Toy"
+} to /users/debert/data/datasets/nbc/cache/input_modules/bdfb0d7a-8d8f-11eb-9974-ac1f6b1b7b40.json

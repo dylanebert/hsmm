@@ -1,0 +1,18 @@
+## SLURM PROLOG ###############################################################
+##    Job ID : 926592
+##  Job Name : Knife
+##  Nodelist : node1109
+##      CPUs : 4
+##  Mem/Node : 16384 MB
+## Directory : /gpfs/data/epavlick/debert/hsmm
+##   Started : Thu Mar 25 13:14:26 EDT 2021
+###############################################################################
+Knife
+splitting sequences
+featurizing
+generating labels
+cached nbc
+saved {
+    "type": "NBCChunksMoving",
+    "obj": "Knife"
+} to /users/debert/data/datasets/nbc/cache/input_modules/c23ff95e-8d8f-11eb-a860-ac1f6b1b7b9e.json
