@@ -1515,11 +1515,11 @@ if __name__ == '__main__':
         report(output)
         output.save_config('lstm_objs')
 
-    '''lstm_objs()
+    lstm_objs()
     lstm_hands()
     lstm_combined()
     obj_motion()
     hand_motion()
-    combined_motion()'''
+    combined_motion()
 
-    lstm_objs()
+    #lstm_objs()
