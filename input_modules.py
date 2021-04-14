@@ -768,7 +768,7 @@ class LSTMUnified(InputModule):
 
         self.output_modules = []
         for inference_module in inference_modules:
-            module = InputModule()
+            module = SerializationWrapper(inference_module)
             module.z = {}
             module.steps = inference_module.steps
             module.lengths = inference_module.lengths
@@ -797,7 +797,7 @@ class LSTMUnified(InputModule):
                 break
             with open(savepath) as f:
                 serialized = json.load(f)
-            module = InputModule()
+            module = SerializationWrapper(self.inference_modules[i])
             module.steps = deserialize_steps(serialized['steps'])
             module.z = deserialize_feature(serialized['z'])
             module.lengths = deserialize_feature(serialized['lengths'])
@@ -845,6 +845,10 @@ class LSTMUnified(InputModule):
         with open(keyspath, 'w+') as f:
             json.dump(keys, f)
         print('saved {} to {}'.format(config, savepath))
+
+class SerializationWrapper(InputModule):
+    def __init__(self, child):
+        self.child = child
 
 '''
 decorator
@@ -1074,6 +1078,22 @@ class MinMax(InputModule):
 '''
 decorator
 ---
+use pca to reduce child to n_dim
+'''
+class ReducePCA(InputModule):
+    def __init__(self, child, n_dim):
+        self.child = child
+        self.n_dim = n_dim
+        self.z = {}
+        scaler = PCA(n_dim=n_dim).fit(child.z['train'])
+        for type in ['train', 'dev', 'test']:
+            self.z[type] = scaler.transform(child.z[type])
+        self.steps = child.steps
+        self.lengths = child.lengths
+
+'''
+decorator
+---
 preprocess velocities
 '''
 class PreprocessVelocity(InputModule):
@@ -1090,21 +1110,6 @@ class PreprocessVelocity(InputModule):
             self.z[type] = log_vel
         self.lengths = child.lengths
         self.steps = child.steps
-
-'''
-decorator
----
-use pca to reduce child dim to 2
-'''
-class ReducePCA(InputModule):
-    def __init__(self, child):
-        self.child = child
-        self.z = {}
-        scaler = PCA().fit(child.z['train'])
-        for type in ['train', 'dev', 'test']:
-            self.z[type] = scaler.transform(child.z[type])
-        self.steps = child.steps
-        self.lengths = child.lengths
 
 '''
 composite
@@ -1241,34 +1246,37 @@ def deserialize_steps(serialized):
 def serialize_configuration(module):
     #leaves
     if isinstance(module, NBCChunks):
-        return json.dumps({'type': 'NBCChunks', 'obj': module.obj}, indent=4)
+        return json.dumps({'type': 'NBCChunks', 'obj': module.obj})
     if isinstance(module, NBCChunksMoving):
-        return json.dumps({'type': 'NBCChunksMoving', 'obj': module.obj}, indent=4)
+        return json.dumps({'type': 'NBCChunksMoving', 'obj': module.obj})
     if isinstance(module, DirectRelPos):
-        return json.dumps({'type': 'DirectRelPos', 'obj': module.obj, 'subsample': module.subsample}, indent=4)
+        return json.dumps({'type': 'DirectRelPos', 'obj': module.obj, 'subsample': module.subsample})
     if isinstance(module, DirectRelVel):
-        return json.dumps({'type': 'DirectRelVel', 'obj': module.obj, 'subsample': module.subsample}, indent=4)
+        return json.dumps({'type': 'DirectRelVel', 'obj': module.obj, 'subsample': module.subsample})
     if isinstance(module, DirectPosition):
-        return json.dumps({'type': 'DirectPosition', 'obj': module.obj, 'subsample': module.subsample}, indent=4)
+        return json.dumps({'type': 'DirectPosition', 'obj': module.obj, 'subsample': module.subsample})
     if isinstance(module, HeadData):
-        return json.dumps({'type': 'HeadData', 'subsample': module.subsample}, indent=4)
+        return json.dumps({'type': 'HeadData', 'subsample': module.subsample})
     if isinstance(module, Engineered):
         return json.dumps({'type': 'Engineered'})
 
     #decorators
+    if isinstance(module, SerializationWrapper):
+        child_config = serialize_configuration(module.child)
+        return json.dumps({'type': 'SerializationWrapper', 'child': child_config})
     if isinstance(module, PosToVel):
         child_config = serialize_configuration(module.child)
-        return json.dumps({'type': 'PosToVel', 'child': child_config}, indent=4)
+        return json.dumps({'type': 'PosToVel', 'child': child_config})
     if isinstance(module, LookPosition):
         child_config = serialize_configuration(module.child)
-        return json.dumps({'type': 'LookPosition', 'child': child_config}, indent=4)
+        return json.dumps({'type': 'LookPosition', 'child': child_config})
     if isinstance(module, LookVelocity):
         child_config = serialize_configuration(module.child)
-        return json.dumps({'type': 'LookVelocity', 'child': child_config}, indent=4)
+        return json.dumps({'type': 'LookVelocity', 'child': child_config})
     if isinstance(module, Trim):
         conditional_config = serialize_configuration(module.conditional)
         child_config = serialize_configuration(module.child)
-        return json.dumps({'type': 'Trim', 'conditional': conditional_config, 'child': child_config}, indent=4)
+        return json.dumps({'type': 'Trim', 'conditional': conditional_config, 'child': child_config})
     if isinstance(module, Autoencoder):
         train_config = serialize_configuration(module.train_module)
         inference_config = serialize_configuration(module.inference_module)
@@ -1292,7 +1300,7 @@ def serialize_configuration(module):
     if isinstance(module, MinMax):
         return json.dumps({'type': 'MinMax', 'child': serialize_configuration(module.child)})
     if isinstance(module, ReducePCA):
-        return json.dumps({'type': 'ReducePCA', 'child': serialize_configuration(module.child)})
+        return json.dumps({'type': 'ReducePCA', 'child': serialize_configuration(module.child), 'n_dim': module.n_dim})
     if isinstance(module, LSTMPreprocessing):
         return json.dumps({'type': 'LSTMPreprocessing', 'child': serialize_configuration(module.child)})
 
@@ -1339,6 +1347,9 @@ def deserialize_configuration(config):
         return Engineered()
 
     #decorators
+    if config['type'] == 'SerializationWrapper':
+        child = serialize_configuration(config['child'])
+        return SerializationWrapper(child)
     if config['type'] == 'PosToVel':
         child = deserialize_configuration(config['child'])
         return PosToVel(child)
@@ -1375,7 +1386,7 @@ def deserialize_configuration(config):
     if config['type'] == 'MinMax':
         return MinMax(deserialize_configuration(config['child']))
     if config['type'] == 'ReducePCA':
-        return ReducePCA(deserialize_configuration(config['child']))
+        return ReducePCA(deserialize_configuration(config['child'], config['n_dim']))
     if config['type'] == 'LSTMPreprocessing':
         return LSTMPreprocessing(deserialize_configuration(config['child']))
 
@@ -1390,7 +1401,7 @@ def deserialize_configuration(config):
         children = [deserialize_configuration(child) for child in config['children']]
         return Max(children)
     if config['type'] == 'MaxConditioned':
-        conditionals = [deserialize_configuration(child) for child in config['conditionals']]
+        conditionals = [deserialize_configuration(conditional) for conditional in config['conditionals']]
         children = [deserialize_configuration(child) for child in config['children']]
         return MaxConditioned(conditionals, children)
     if config['type'] == 'AutoencoderUnified':
@@ -1411,8 +1422,8 @@ if __name__ == '__main__':
     subsample = 9
 
     def combined_motion():
-        hand_motion = InputModule.build_from_config('engineered_hands')
-        obj_motion = InputModule.build_from_config('engineered_objs')
+        hand_motion = InputModule.load_from_config('engineered_hands')
+        obj_motion = InputModule.load_from_config('engineered_objs')
         data = ConcatFeat((hand_motion, obj_motion))
         report(data)
         data.save_config('engineered')
@@ -1446,8 +1457,8 @@ if __name__ == '__main__':
         data.save_config('engineered_objs')
 
     def lstm_combined():
-        hand_motion = InputModule.build_from_config('lstm_hands')
-        obj_motion = InputModule.build_from_config('lstm_objs')
+        hand_motion = InputModule.load_from_config('lstm_hands')
+        obj_motion = InputModule.load_from_config('lstm_objs')
         data = ConcatFeat((hand_motion, obj_motion))
         report(data)
         data.save_config('lstm')
@@ -1504,9 +1515,11 @@ if __name__ == '__main__':
         report(output)
         output.save_config('lstm_objs')
 
-    lstm_objs()
+    '''lstm_objs()
     lstm_hands()
     lstm_combined()
     obj_motion()
     hand_motion()
-    combined_motion()
+    combined_motion()'''
+
+    lstm_objs()

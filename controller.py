@@ -40,7 +40,7 @@ def get_input_data(session, type='dev'):
 def get_hsmm_input_encodings(session, type='dev'):
     global hsmm_wrapper
     predictions = hsmm_wrapper.predictions[type]
-    module = ConvertToSessions(ReducePCA(ConvertToChunks(hsmm_wrapper.input_module)))
+    module = ConvertToSessions(ReducePCA(ConvertToChunks(hsmm_wrapper.input_module), 2))
     z = module.z[type]
     steps = module.steps[type]
     lengths = module.lengths[type]
