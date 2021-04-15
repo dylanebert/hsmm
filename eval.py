@@ -27,7 +27,7 @@ class OddManOut:
         self.save()
 
     def load(self):
-        fpath = NBC_ROOT + 'cache/eval/{}.json'.format(self.hsmm_wrapper.fname)
+        fpath = NBC_ROOT + '/cache/eval/{}.json'.format(self.hsmm_wrapper.fname)
         if not os.path.exists(fpath):
             return False
         with open(fpath) as f:
@@ -38,7 +38,7 @@ class OddManOut:
         return True
 
     def save(self):
-        fpath = NBC_ROOT + 'cache/eval/{}.json'.format(self.hsmm_wrapper.fname)
+        fpath = NBC_ROOT + '/cache/eval/{}.json'.format(self.hsmm_wrapper.fname)
         serialized = {'questions': self.questions, 'answers': self.answers}
         with open(fpath, 'w+') as f:
             json.dump(serialized, f)

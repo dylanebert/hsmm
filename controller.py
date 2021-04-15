@@ -21,7 +21,7 @@ def initialize(fpath):
     if 'hsmm_' in fpath:
         #hsmm_wrapper = VirtualHSMMWrapper(fpath)
         hsmm_wrapper = HSMMWrapper(fpath, device='cuda')
-        merge_similar_states(hsmm_wrapper)
+        #merge_similar_states(hsmm_wrapper)
         input_module = hsmm_wrapper.input_module
     else:
         fname = os.path.basename(fpath).replace('.json', '')

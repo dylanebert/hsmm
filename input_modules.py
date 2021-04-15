@@ -47,7 +47,7 @@ class InputModule:
         return
 
     def load(self):
-        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        keyspath = NBC_ROOT + '/cache/input_modules/keys.json'
         if not os.path.exists(keyspath):
             return False
         with open(keyspath) as f:
@@ -58,7 +58,7 @@ class InputModule:
             return False
 
         savename = keys[config]
-        savepath = NBC_ROOT + 'cache/input_modules/{}.json'.format(savename)
+        savepath = NBC_ROOT + '/cache/input_modules/{}.json'.format(savename)
         if not os.path.exists(savepath):
             return False
 
@@ -72,7 +72,7 @@ class InputModule:
         return True
 
     def save(self):
-        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        keyspath = NBC_ROOT + '/cache/input_modules/keys.json'
         if os.path.exists(keyspath):
             with open(keyspath) as f:
                 keys = json.load(f)
@@ -85,7 +85,7 @@ class InputModule:
         else:
             savename = str(uuid.uuid1())
             keys[config] = savename
-        savepath = NBC_ROOT + 'cache/input_modules/{}.json'.format(savename)
+        savepath = NBC_ROOT + '/cache/input_modules/{}.json'.format(savename)
 
         serialized = {
             'z': serialize_feature(self.z),
@@ -95,26 +95,26 @@ class InputModule:
         with open(savepath, 'w+') as f:
             json.dump(serialized, f)
         with open(keyspath, 'w+') as f:
-            json.dump(keys, f)
+            json.dump(keys, f, indent=4)
         print('saved {} to {}'.format(config, savepath))
 
     def save_config(self, fname):
         self.save()
-        fpath = NBC_ROOT + 'config/{}.json'.format(fname)
+        fpath = NBC_ROOT + '/config/{}.json'.format(fname)
         with open(fpath, 'w+') as f:
             f.write(serialize_configuration(self))
         print('saved config to {}'.format(fpath))
 
     @classmethod
     def load_from_config(cls, fname):
-        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        keyspath = NBC_ROOT + '/cache/input_modules/keys.json'
         if not os.path.exists(keyspath):
             assert False, '{} does not exist'.format(keyspath)
             return None
         with open(keyspath) as f:
             keys = json.load(f)
 
-        fpath = NBC_ROOT + 'config/{}.json'.format(fname)
+        fpath = NBC_ROOT + '/config/{}.json'.format(fname)
         with open(fpath) as f:
             config = f.read()
         if config not in keys:
@@ -122,7 +122,7 @@ class InputModule:
             return None
 
         savename = keys[config]
-        savepath = NBC_ROOT + 'cache/input_modules/{}.json'.format(savename)
+        savepath = NBC_ROOT + '/cache/input_modules/{}.json'.format(savename)
         if not os.path.exists(savepath):
             assert False, 'savepath {} does not exist'.format(savepath)
             return False
@@ -138,7 +138,7 @@ class InputModule:
 
     @classmethod
     def build_from_config(cls, fname):
-        fpath = NBC_ROOT + 'config/{}.json'.format(fname)
+        fpath = NBC_ROOT + '/config/{}.json'.format(fname)
         with open(fpath) as f:
             config = json.load(f)
         module = deserialize_configuration(config)
@@ -530,7 +530,7 @@ class Autoencoder(InputModule):
         _, seq_len, input_dim = train_module.z['train'].shape
         self.vae = VAE(seq_len, input_dim, 8, 1, 10000)
         self.vae.compile(optimizer='adam')
-        tmp_path = NBC_ROOT + 'cache/tmp/{}.h5'.format(str(uuid.uuid1()))
+        tmp_path = NBC_ROOT + '/cache/tmp/{}.h5'.format(str(uuid.uuid1()))
         callbacks = [
             tf.keras.callbacks.EarlyStopping(patience=25, verbose=1),
             tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
@@ -549,12 +549,12 @@ class Autoencoder(InputModule):
 
     def save(self):
         super().save()
-        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        keyspath = NBC_ROOT + '/cache/input_modules/keys.json'
         with open(keyspath) as f:
             keys = json.load(f)
         config = serialize_configuration(self)
         savename = keys[config]
-        weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+        weightspath = NBC_ROOT + '/cache/input_modules/{}_weights.json'.format(savename)
         self.vae.save_weights(weightspath)
 
     def load(self, load_model=False):
@@ -564,12 +564,12 @@ class Autoencoder(InputModule):
                 _, seq_len, input_dim = self.inference_module.z['train'].shape
                 self.vae = VAE(seq_len, input_dim, 8, 1, 10000)
                 self.vae(self.inference_module.z['train'][:10])
-                keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+                keyspath = NBC_ROOT + '/cache/input_modules/keys.json'
                 with open(keyspath) as f:
                     keys = json.load(f)
                 config = serialize_configuration(self)
                 savename = keys[config]
-                weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+                weightspath = NBC_ROOT + '/cache/input_modules/{}_weights.json'.format(savename)
                 self.vae.load_weights(weightspath)
             return True
         return False
@@ -591,7 +591,7 @@ class AutoencoderUnified(InputModule):
         _, seq_len, input_dim = train_module.z['train'].shape
         self.vae = VAE(seq_len, input_dim, 8, 1, 10000)
         self.vae.compile(optimizer='adam')
-        tmp_path = NBC_ROOT + 'cache/tmp/{}.h5'.format(str(uuid.uuid1()))
+        tmp_path = NBC_ROOT + '/cache/tmp/{}.h5'.format(str(uuid.uuid1()))
         callbacks = [
             tf.keras.callbacks.EarlyStopping(patience=25, verbose=1),
             tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
@@ -612,7 +612,7 @@ class AutoencoderUnified(InputModule):
         self.save()
 
     def load(self, load_model=False):
-        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        keyspath = NBC_ROOT + '/cache/input_modules/keys.json'
         if not os.path.exists(keyspath):
             return False
         with open(keyspath) as f:
@@ -626,7 +626,7 @@ class AutoencoderUnified(InputModule):
         self.output_modules = []
         i = 0
         while True:
-            savepath = NBC_ROOT + 'cache/input_modules/{}_{}'.format(savename, i)
+            savepath = NBC_ROOT + '/cache/input_modules/{}_{}'.format(savename, i)
             if not os.path.exists(savepath):
                 break
             with open(savepath) as f:
@@ -642,14 +642,14 @@ class AutoencoderUnified(InputModule):
             _, seq_len, input_dim = self.inference_modules[0].z['train'].shape
             self.vae = VAE(seq_len, input_dim, 8, 1, 10000)
             self.vae(self.inference_modules[0].z['train'][:10])
-            weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+            weightspath = NBC_ROOT + '/cache/input_modules/{}_weights.json'.format(savename)
             self.vae.load_weights(weightspath)
 
         print('loaded {} from {}'.format(config, savepath))
         return True
 
     def save(self):
-        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        keyspath = NBC_ROOT + '/cache/input_modules/keys.json'
         if os.path.exists(keyspath):
             with open(keyspath) as f:
                 keys = json.load(f)
@@ -664,7 +664,7 @@ class AutoencoderUnified(InputModule):
             keys[config] = savename
 
         for i, module in enumerate(self.output_modules):
-            savepath = NBC_ROOT + 'cache/input_modules/{}_{}'.format(savename, i)
+            savepath = NBC_ROOT + '/cache/input_modules/{}_{}'.format(savename, i)
             serialized = {
                 'z': serialize_feature(module.z),
                 'lengths': serialize_feature(module.lengths),
@@ -673,11 +673,11 @@ class AutoencoderUnified(InputModule):
             with open(savepath, 'w+') as f:
                 json.dump(serialized, f)
 
-        weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+        weightspath = NBC_ROOT + '/cache/input_modules/{}_weights.json'.format(savename)
         self.vae.save_weights(weightspath)
 
         with open(keyspath, 'w+') as f:
-            json.dump(keys, f)
+            json.dump(keys, f, indent=4)
         print('saved {} to {}'.format(config, savepath))
 
 '''
@@ -696,7 +696,7 @@ class LSTMModule(InputModule):
         _, seq_len, input_dim = train_in.z['train'].shape
         self.lstm = LSTM(seq_len, input_dim, 8)
         self.lstm.compile(optimizer='adam', loss='mse')
-        tmp_path = NBC_ROOT + 'cache/tmp/{}.h5'.format(str(uuid.uuid1()))
+        tmp_path = NBC_ROOT + '/cache/tmp/{}.h5'.format(str(uuid.uuid1()))
         callbacks = [
             tf.keras.callbacks.EarlyStopping(patience=10, verbose=1),
             tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
@@ -715,12 +715,12 @@ class LSTMModule(InputModule):
 
     def save(self):
         super().save()
-        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        keyspath = NBC_ROOT + '/cache/input_modules/keys.json'
         with open(keyspath) as f:
             keys = json.load(f)
         config = serialize_configuration(self)
         savename = keys[config]
-        weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+        weightspath = NBC_ROOT + '/cache/input_modules/{}_weights.json'.format(savename)
         self.lstm.save_weights(weightspath)
 
     def load(self, load_model=False):
@@ -730,12 +730,12 @@ class LSTMModule(InputModule):
                 _, seq_len, input_dim = self.inference_module.z['train'].shape
                 self.lstm = LSTM(seq_len, input_dim, 8)
                 self.lstm(self.inference_module.z['train'][:10])
-                keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+                keyspath = NBC_ROOT + '/cache/input_modules/keys.json'
                 with open(keyspath) as f:
                     keys = json.load(f)
                 config = serialize_configuration(self)
                 savename = keys[config]
-                weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+                weightspath = NBC_ROOT + '/cache/input_modules/{}_weights.json'.format(savename)
                 self.lstm.load_weights(weightspath)
             return True
         return False
@@ -757,7 +757,7 @@ class LSTMUnified(InputModule):
         _, seq_len, input_dim = train_module.z['train'].shape
         self.lstm = LSTM(seq_len, input_dim, 8)
         self.lstm.compile(optimizer='adam', loss='mse')
-        tmp_path = NBC_ROOT + 'cache/tmp/{}.h5'.format(str(uuid.uuid1()))
+        tmp_path = NBC_ROOT + '/cache/tmp/{}.h5'.format(str(uuid.uuid1()))
         callbacks = [
             tf.keras.callbacks.EarlyStopping(patience=10, verbose=1),
             tf.keras.callbacks.ModelCheckpoint(tmp_path, save_best_only=True, verbose=1)
@@ -778,7 +778,7 @@ class LSTMUnified(InputModule):
         self.save()
 
     def load(self, load_model=False):
-        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        keyspath = NBC_ROOT + '/cache/input_modules/keys.json'
         if not os.path.exists(keyspath):
             return False
         with open(keyspath) as f:
@@ -792,7 +792,7 @@ class LSTMUnified(InputModule):
         self.output_modules = []
         i = 0
         while True:
-            savepath = NBC_ROOT + 'cache/input_modules/{}_{}'.format(savename, i)
+            savepath = NBC_ROOT + '/cache/input_modules/{}_{}'.format(savename, i)
             if not os.path.exists(savepath):
                 break
             with open(savepath) as f:
@@ -808,14 +808,14 @@ class LSTMUnified(InputModule):
             _, seq_len, input_dim = self.inference_modules[0].z['train'].shape
             self.lstm = LSTM(seq_len, input_dim, 8)
             self.lstm(self.inference_modules[0].z['train'][:10])
-            weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+            weightspath = NBC_ROOT + '/cache/input_modules/{}_weights.json'.format(savename)
             self.lstm.load_weights(weightspath)
 
         print('loaded {} from {}'.format(config, savepath))
         return True
 
     def save(self):
-        keyspath = NBC_ROOT + 'cache/input_modules/keys.json'
+        keyspath = NBC_ROOT + '/cache/input_modules/keys.json'
         if os.path.exists(keyspath):
             with open(keyspath) as f:
                 keys = json.load(f)
@@ -830,7 +830,7 @@ class LSTMUnified(InputModule):
             keys[config] = savename
 
         for i, module in enumerate(self.output_modules):
-            savepath = NBC_ROOT + 'cache/input_modules/{}_{}'.format(savename, i)
+            savepath = NBC_ROOT + '/cache/input_modules/{}_{}'.format(savename, i)
             serialized = {
                 'z': serialize_feature(module.z),
                 'lengths': serialize_feature(module.lengths),
@@ -839,11 +839,11 @@ class LSTMUnified(InputModule):
             with open(savepath, 'w+') as f:
                 json.dump(serialized, f)
 
-        weightspath = NBC_ROOT + 'cache/input_modules/{}_weights.json'.format(savename)
+        weightspath = NBC_ROOT + '/cache/input_modules/{}_weights.json'.format(savename)
         self.lstm.save_weights(weightspath)
 
         with open(keyspath, 'w+') as f:
-            json.dump(keys, f)
+            json.dump(keys, f, indent=4)
         print('saved {} to {}'.format(config, savepath))
 
 class SerializationWrapper(InputModule):
@@ -912,56 +912,6 @@ class LSTMPreprocessing(InputModule):
                     self.steps[type][(marker, key[0], i)] = child.steps[type][key]
             self.z[type] = np.array(self.z[type], dtype=np.float32)
             self.lengths[type] = np.array(self.lengths[type], dtype=int)
-
-'''
-leaf
----
-custom engineered layer
-'''
-class Engineered(InputModule):
-    def __init__(self):
-        hand_inputs = {}
-        for hand in ['LeftHand', 'RightHand']:
-            hand_inputs[hand] = DirectRelVel(hand, 90)
-        obj_inputs = {}
-        for obj in obj_names:
-            obj_inputs[obj] = DirectRelVel(obj, 90)
-        self.z = {'train': [], 'dev': [], 'test': []}
-        self.steps = {'train': OrderedDict(), 'dev': OrderedDict(), 'test': OrderedDict()}
-        for type in ['train', 'dev', 'test']:
-            for i, key in enumerate(hand_inputs['LeftHand'].steps[type].keys()):
-                obj_seqs = []
-                for obj, obj_input in obj_inputs.items():
-                    obj_seqs.append(obj_input.z[type][i])
-                obj_seqs = np.stack(obj_seqs, axis=0)
-                obj_velocities = np.linalg.norm(obj_seqs, axis=-1)
-                max_obj = obj_velocities.max(axis=0)
-                obj_moving = max_obj > 1e-1
-
-                hand_seqs = []
-                for hand, hand_input in hand_inputs.items():
-                    hand_seqs.append(hand_input.z[type][i][:,2])
-                def get_max(a, axis=None):
-                    amax = a.max(axis)
-                    amin = a.min(axis)
-                    return np.where(-amin > amax, amin, amax)
-                hand_seqs = np.stack(hand_seqs, axis=0)
-                max_hand = get_max(hand_seqs, axis=0)
-                put = np.logical_and(max_hand > 2e-1, obj_moving)
-                pick = np.logical_and(max_hand < -2e-1, obj_moving)
-                hand_motion = np.zeros(max_hand.shape)
-                hand_motion[put] = 1
-                hand_motion[pick] = -1
-                print(hand_motion)
-
-                vec = np.zeros((hand_motion.shape[0], 2))
-                vec[:,0] = hand_motion
-                vec[:,1] = obj_moving
-
-                self.z[type].append(vec)
-                self.steps[type][key] = hand_inputs['LeftHand'].steps[type][key][:,np.newaxis]
-            self.z[type] = np.array(self.z[type], dtype=np.float32)
-        self.lengths = hand_inputs['LeftHand'].lengths
 
 '''
 decorator
@@ -1085,7 +1035,7 @@ class ReducePCA(InputModule):
         self.child = child
         self.n_dim = n_dim
         self.z = {}
-        scaler = PCA(n_dim=n_dim).fit(child.z['train'])
+        scaler = PCA(n_components=n_dim).fit(child.z['train'])
         for type in ['train', 'dev', 'test']:
             self.z[type] = scaler.transform(child.z[type])
         self.steps = child.steps
@@ -1187,6 +1137,8 @@ class MaxConditioned(InputModule):
     def __init__(self, conditionals, children):
         self.conditionals = conditionals
         self.children = children
+        if self.load():
+            return
 
         self.z = {}
         self.steps = children[0].steps
@@ -1212,6 +1164,7 @@ class MaxConditioned(InputModule):
                 max_data.append(z[type][i,argmax,...])
             max_data = np.array(max_data, dtype=np.float32)
             self.z[type] = max_data
+        self.save()
 
 #-----------------------utility functions-----------------------
 class Args:
@@ -1244,6 +1197,10 @@ def deserialize_steps(serialized):
             steps[type][key_tuple] = np.array(serialized[type][key])
     return steps
 def serialize_configuration(module):
+    return serialize_recursive(module).replace('\\', '')
+def serialize_recursive(module):
+    assert module is not None and not type(module) is InputModule
+
     #leaves
     if isinstance(module, NBCChunks):
         return json.dumps({'type': 'NBCChunks', 'obj': module.obj})
@@ -1257,74 +1214,72 @@ def serialize_configuration(module):
         return json.dumps({'type': 'DirectPosition', 'obj': module.obj, 'subsample': module.subsample})
     if isinstance(module, HeadData):
         return json.dumps({'type': 'HeadData', 'subsample': module.subsample})
-    if isinstance(module, Engineered):
-        return json.dumps({'type': 'Engineered'})
 
     #decorators
     if isinstance(module, SerializationWrapper):
-        child_config = serialize_configuration(module.child)
+        child_config = serialize_recursive(module.child)
         return json.dumps({'type': 'SerializationWrapper', 'child': child_config})
     if isinstance(module, PosToVel):
-        child_config = serialize_configuration(module.child)
+        child_config = serialize_recursive(module.child)
         return json.dumps({'type': 'PosToVel', 'child': child_config})
     if isinstance(module, LookPosition):
-        child_config = serialize_configuration(module.child)
+        child_config = serialize_recursive(module.child)
         return json.dumps({'type': 'LookPosition', 'child': child_config})
     if isinstance(module, LookVelocity):
-        child_config = serialize_configuration(module.child)
+        child_config = serialize_recursive(module.child)
         return json.dumps({'type': 'LookVelocity', 'child': child_config})
     if isinstance(module, Trim):
-        conditional_config = serialize_configuration(module.conditional)
-        child_config = serialize_configuration(module.child)
+        conditional_config = serialize_recursive(module.conditional)
+        child_config = serialize_recursive(module.child)
         return json.dumps({'type': 'Trim', 'conditional': conditional_config, 'child': child_config})
     if isinstance(module, Autoencoder):
-        train_config = serialize_configuration(module.train_module)
-        inference_config = serialize_configuration(module.inference_module)
+        train_config = serialize_recursive(module.train_module)
+        inference_config = serialize_recursive(module.inference_module)
         return json.dumps({'type': 'Autoencoder', 'train_config': train_config, 'inference_config': inference_config})
     if isinstance(module, LSTMModule):
-        train_config = serialize_configuration(module.train_module)
-        inference_config = serialize_configuration(module.inference_module)
+        train_config = serialize_recursive(module.train_module)
+        inference_config = serialize_recursive(module.inference_module)
         return json.dumps({'type': 'LSTMModule', 'train_config': train_config, 'inference_config': inference_config})
     if isinstance(module, LSTMInputModule):
-        return json.dumps({'type': 'LSTMInputModule', 'child': serialize_configuration(module.child), 'window': module.window, 'stride': module.stride, 'lag': module.lag})
+        return json.dumps({'type': 'LSTMInputModule', 'child': serialize_recursive(module.child), 'window': module.window, 'stride': module.stride, 'lag': module.lag})
     if isinstance(module, ConvertToSessions):
-        return json.dumps({'type': 'ConvertToSessions', 'child': serialize_configuration(module.child)})
+        return json.dumps({'type': 'ConvertToSessions', 'child': serialize_recursive(module.child)})
     if isinstance(module, ConvertToChunks):
-        return json.dumps({'type': 'ConvertToChunks', 'child': serialize_configuration(module.child)})
+        return json.dumps({'type': 'ConvertToChunks', 'child': serialize_recursive(module.child)})
     if isinstance(module, StandardScale):
-        return json.dumps({'type': 'StandardScale', 'child': serialize_configuration(module.child)})
+        return json.dumps({'type': 'StandardScale', 'child': serialize_recursive(module.child)})
     if isinstance(module, PreprocessVelocity):
-        return json.dumps({'type': 'PreprocessVelocity', 'child': serialize_configuration(module.child)})
+        return json.dumps({'type': 'PreprocessVelocity', 'child': serialize_recursive(module.child)})
     if isinstance(module, Clip):
-        return json.dumps({'type': 'Clip', 'child': serialize_configuration(module.child)})
+        return json.dumps({'type': 'Clip', 'child': serialize_recursive(module.child)})
     if isinstance(module, MinMax):
-        return json.dumps({'type': 'MinMax', 'child': serialize_configuration(module.child)})
+        return json.dumps({'type': 'MinMax', 'child': serialize_recursive(module.child)})
     if isinstance(module, ReducePCA):
-        return json.dumps({'type': 'ReducePCA', 'child': serialize_configuration(module.child), 'n_dim': module.n_dim})
+        return json.dumps({'type': 'ReducePCA', 'child': serialize_recursive(module.child), 'n_dim': module.n_dim})
     if isinstance(module, LSTMPreprocessing):
-        return json.dumps({'type': 'LSTMPreprocessing', 'child': serialize_configuration(module.child)})
+        return json.dumps({'type': 'LSTMPreprocessing', 'child': serialize_recursive(module.child)})
 
     #composite
     if isinstance(module, Concat):
-        children = [serialize_configuration(child) for child in module.children]
+        children = [serialize_recursive(child) for child in module.children]
         return json.dumps({'type': 'Concat', 'children': children})
     if isinstance(module, ConcatFeat):
-        children = [serialize_configuration(child) for child in module.children]
+        children = [serialize_recursive(child) for child in module.children]
         return json.dumps({'type': 'ConcatFeat', 'children': children})
     if isinstance(module, Max):
-        children = [serialize_configuration(child) for child in module.children]
+        children = [serialize_recursive(child) for child in module.children]
         return json.dumps({'type': 'Max', 'children': children})
     if isinstance(module, MaxConditioned):
-        conditionals = [serialize_configuration(conditional) for conditional in module.conditionals]
-        children = [serialize_configuration(child) for child in module.children]
+        conditionals = [serialize_recursive(conditional) for conditional in module.conditionals]
+        children = [serialize_recursive(child) for child in module.children]
         return json.dumps({'type': 'MaxConditioned', 'conditionals': conditionals, 'children': children})
     if isinstance(module, AutoencoderUnified):
-        train_config = serialize_configuration(module.train_module)
-        inference_configs = [serialize_configuration(inference_module) for inference_module in module.inference_modules]
+        train_config = serialize_recursive(module.train_module)
+        inference_configs = [serialize_recursive(inference_module) for inference_module in module.inference_modules]
         return json.dumps({'type': 'AutoencoderUnified', 'train_config': train_config, 'inference_configs': inference_configs})
     if isinstance(module, LSTMUnified):
-        train_config = serialize_configuration(module.train_module)
-        inference_configs = [serialize_configuration(inference_module) for inference_module in module.inference_modules]
+        train_config = serialize_recursive(module.train_module)
+        inference_configs = [serialize_recursive(inference_module) for inference_module in module.inference_modules]
         return json.dumps({'type': 'LSTMUnified', 'train_config': train_config, 'inference_configs': inference_configs})
 def deserialize_configuration(config):
     if isinstance(config, str):
@@ -1343,8 +1298,6 @@ def deserialize_configuration(config):
         return DirectPosition(config['obj'], config['subsample'])
     if config['type'] == 'HeadData':
         return HeadData(config['subsample'])
-    if config['type'] == 'Engineered':
-        return Engineered()
 
     #decorators
     if config['type'] == 'SerializationWrapper':
@@ -1420,6 +1373,15 @@ def report(module):
 
 if __name__ == '__main__':
     subsample = 9
+
+    def preprocessed_obj(obj):
+        pos = DirectPosition(obj, subsample)
+        vel = PosToVel(pos)
+        vel = LookVelocity(vel)
+        vel.save_config(obj)
+    for obj in obj_names:
+        preprocessed_obj(obj)
+    sys.exit()
 
     def combined_motion():
         hand_motion = InputModule.load_from_config('engineered_hands')
@@ -1515,11 +1477,9 @@ if __name__ == '__main__':
         report(output)
         output.save_config('lstm_objs')
 
-    lstm_objs()
-    lstm_hands()
-    lstm_combined()
-    obj_motion()
-    hand_motion()
-    combined_motion()
-
     #lstm_objs()
+    #lstm_hands()
+    #lstm_combined()
+    #obj_motion()
+    #hand_motion()
+    #combined_motion()

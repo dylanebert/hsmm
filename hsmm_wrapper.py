@@ -49,7 +49,7 @@ class HSMMWrapper:
             fname = os.path.basename(fname)
         fname = fname.replace('.json', '')
         self.fname = fname
-        with open(NBC_ROOT + 'config/{}.json'.format(fname)) as f:
+        with open(NBC_ROOT + '/config/{}.json'.format(fname)) as f:
             args = json.load(f)
         self.args = args
         self.device = torch.device(device)
@@ -67,16 +67,16 @@ class HSMMWrapper:
         self.predictions = {}
         for type in ['train', 'dev', 'test']:
             self.predictions[type] = self.predict(type)
-        weights_path = NBC_ROOT + 'cache/hsmm/{}_weights.json'.format(self.fname)
-        predictions_path = NBC_ROOT + 'cache/hsmm/{}_predictions.json'.format(self.fname)
+        weights_path = NBC_ROOT + '/cache/hsmm/{}_weights.json'.format(self.fname)
+        predictions_path = NBC_ROOT + '/cache/hsmm/{}_predictions.json'.format(self.fname)
         torch.save(self.model.state_dict(), weights_path)
         with open(predictions_path, 'w+') as f:
             json.dump(self.predictions, f)
         print('saved to {}'.format(predictions_path))
 
     def load(self, load_model=False):
-        weights_path = NBC_ROOT + 'cache/hsmm/{}_weights.json'.format(self.fname)
-        predictions_path = NBC_ROOT + 'cache/hsmm/{}_predictions.json'.format(self.fname)
+        weights_path = NBC_ROOT + '/cache/hsmm/{}_weights.json'.format(self.fname)
+        predictions_path = NBC_ROOT + '/cache/hsmm/{}_predictions.json'.format(self.fname)
         if not os.path.exists(weights_path) or not os.path.exists(predictions_path):
             return False
         if load_model:
@@ -169,7 +169,7 @@ class VirtualHSMMWrapper:
             fname = os.path.basename(fname)
         fname = fname.replace('.json', '')
         self.fname = fname
-        with open(NBC_ROOT + 'config/{}.json'.format(fname)) as f:
+        with open(NBC_ROOT + '/config/{}.json'.format(fname)) as f:
             args = json.load(f)
         self.args = args
         self.input_module = InputModule.load_from_config(args['input_config'])
