@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 import random
 import os
 import sys
@@ -8,8 +7,7 @@ import controller
 
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 NBC_ROOT = os.environ['NBC_ROOT']
-sys.path.append(NBC_ROOT)
-import config
+
 
 class OddManOut:
     def __init__(self, hsmm_wrapper, type='dev'):
@@ -27,7 +25,8 @@ class OddManOut:
         self.save()
 
     def load(self):
-        fpath = NBC_ROOT + '/cache/eval/{}.json'.format(self.hsmm_wrapper.fname)
+        fname = self.hsmm_wrapper.fname
+        fpath = NBC_ROOT + '/cache/eval/{}.json'.format(fname)
         if not os.path.exists(fpath):
             return False
         with open(fpath) as f:
@@ -38,7 +37,8 @@ class OddManOut:
         return True
 
     def save(self):
-        fpath = NBC_ROOT + '/cache/eval/{}.json'.format(self.hsmm_wrapper.fname)
+        fname = self.hsmm_wrapper.fname
+        fpath = NBC_ROOT + '/cache/eval/{}.json'.format(fname)
         serialized = {'questions': self.questions, 'answers': self.answers}
         with open(fpath, 'w+') as f:
             json.dump(serialized, f)
@@ -75,7 +75,9 @@ class OddManOut:
                     qlabel = entry['label']
                     session = entry['session']
                     oddmanout = j == 3
-                    question.append((oddmanout, session, start_timestamp, end_timestamp, start_step, end_step, qlabel))
+                    data = (oddmanout, session, start_timestamp, end_timestamp,
+                            start_step, end_step, qlabel)
+                    question.append(data)
                 random.shuffle(question)
                 questions.append((int(label), question))
         random.shuffle(questions)
@@ -85,25 +87,25 @@ class OddManOut:
     def sample(self, primary_label=None):
         labels = np.array(list(self.rle_dict.keys()))
         assert len(labels >= 2)
-        if primary_label == None:
+        if primary_label is None:
             primary_label = random.choice(labels.tolist())
-        secondary_label = random.choice(labels[labels != primary_label].tolist())
+        false_label = random.choice(labels[labels != primary_label].tolist())
         choices = []
         for i in range(3):
             choices.append(random.choice(self.rle_dict[primary_label]))
-        choices.append(random.choice(self.rle_dict[secondary_label]))
+        choices.append(random.choice(self.rle_dict[false_label]))
         return choices
 
     def rle(self):
         rle_dict = {}
-        for i, (key, steps) in enumerate(self.input_module.steps[self.type].items()):
+        items = self.input_module.steps[self.type].items()
+        for i, (key, steps) in enumerate(items):
             try:
                 session_start_step = steps[0][0]
-            except:
+            except IndexError:
                 session_start_step = steps[0]
             predictions = self.predictions[i]
             prev_idx = 0
-            k = 1
             for i in range(1, len(predictions)):
                 prev_label = predictions[prev_idx]
                 label = predictions[i]
@@ -111,7 +113,7 @@ class OddManOut:
                     try:
                         start_step = steps[prev_idx][0]
                         end_step = steps[i][-1]
-                    except:
+                    except IndexError:
                         start_step = steps[prev_idx]
                         end_step = steps[i]
                     start_timestamp = (start_step - session_start_step) / 90.
@@ -135,15 +137,16 @@ class OddManOut:
         for i in range(len(self.answers)):
             answer = self.answers[i]
             question = self.questions[i]
-            gold = (np.array([q[0] for q in question[1]]) == True).argmax()
+            gold = (np.array([q[0] for q in question[1]]) is True).argmax()
             if answer == gold:
                 correct += 1
             sum += 1
         print(correct / sum)
 
+
 if __name__ == '__main__':
     config = sys.argv[1]
     controller.initialize(config)
-    hsmm_wrapper = controller.hsmm_wrapper
+    hsmm_wrapper = controller.HSMM_WRAPPER
     eval = OddManOut(hsmm_wrapper)
     eval.report()

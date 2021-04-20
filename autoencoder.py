@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
+
 class Sampling(tf.keras.layers.Layer):
     def call(self, inputs):
         z_mean, z_log_var = inputs
@@ -8,6 +9,7 @@ class Sampling(tf.keras.layers.Layer):
         dim = tf.shape(z_mean)[1]
         epsilon = tf.random.normal(shape=(batch, dim))
         return z_mean + tf.math.exp(.5 * z_log_var) * epsilon
+
 
 class VAE(tf.keras.models.Model):
     def __init__(self, seq_len, input_dim, hidden_dim, beta, warm_up_iters):

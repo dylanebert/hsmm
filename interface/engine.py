@@ -1,27 +1,24 @@
-from flask import Flask, request
-import json
-import numpy as np
-import pandas as pd
-import seaborn as sns
-from colorutils import Color
+from eval import OddManOut
 import os
-import sys
+import controller
+import json
+from flask import Flask, request
+import numpy as np
+import seaborn as sns
 
 assert 'HSMM_ROOT' in os.environ, 'set HSMM_ROOT'
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 HSMM_ROOT = os.environ['HSMM_ROOT']
 NBC_ROOT = os.environ['NBC_ROOT']
-sys.path.append(HSMM_ROOT)
-sys.path.append(NBC_ROOT)
-import controller
-from eval import OddManOut
 
 app = Flask(__name__)
-args = None
+ARGS = None
+
 
 @app.route('/')
 def hello():
     return 'python engine running'
+
 
 @app.route('/load_config')
 def load_config():
@@ -29,32 +26,36 @@ def load_config():
     controller.initialize(fpath)
     return 'success'
 
+
 @app.route('/get_eval')
 def get_eval():
-    hsmm_wrapper = controller.hsmm_wrapper
+    hsmm_wrapper = controller.HSMM_WRAPPER
     eval = OddManOut(hsmm_wrapper)
     questions = eval.questions
     answers = eval.answers
     for qidx in range(len(answers)):
-        if answers[qidx] == None:
+        if answers[qidx] is None:
             print((qidx, len(answers)))
             return json.dumps((qidx, questions[qidx]))
     return 'done'
+
 
 @app.route('/write_answer')
 def write_answer():
     qidx = int(request.args.get('qidx'))
     answer = int(request.args.get('answer'))
-    hsmm_wrapper = controller.hsmm_wrapper
+    hsmm_wrapper = controller.HSMM_WRAPPER
     eval = OddManOut(hsmm_wrapper)
     eval.answers[qidx] = answer
     eval.save()
     return 'success'
 
+
 @app.route('/get_sessions')
 def get_sessions():
-    sessions = list(controller.input_module.steps['dev'].keys())
+    sessions = list(controller.INPUT_MODULE.steps['dev'].keys())
     return json.dumps(sessions)
+
 
 @app.route('/get_input_data')
 def get_input_data():
@@ -66,7 +67,7 @@ def get_input_data():
     for i in range(n_dim):
         data = []
         for j in range(n_points):
-            point = float(z[j,i])
+            point = float(z[j, i])
             data.append(point)
         dataset = {
             'data': data,
@@ -78,26 +79,28 @@ def get_input_data():
     data = {'labels': steps.astype(str).tolist(), 'datasets': datasets}
     return json.dumps(data)
 
+
 @app.route('/get_hsmm_input_encodings')
 def get_hsmm_input_encodings():
     session = request.args.get('session')
-    hsmm_wrapper = controller.hsmm_wrapper
     data = controller.get_hsmm_input_encodings(session, 'dev')
     pal = sns.color_palette('hls', data['label'].max() + 1).as_hex()
     data['x'] = data.apply(lambda row: row['encoding'][0], axis=1)
     try:
         data['y'] = data.apply(lambda row: row['encoding'][1], axis=1)
-    except:
+    except Exception:
         data['y'] = 0
     datasets = []
     for label, rows in data.groupby('label'):
+        data = rows[['x', 'y', 'timestamp', 'start_step', 'end_step']]
         dataset = {
             'label': label,
-            'data': rows[['x', 'y', 'timestamp', 'start_step', 'end_step']].to_dict(orient='records'),
+            'data': data.to_dict(orient='records'),
             'backgroundColor': pal[label]
         }
         datasets.append(dataset)
     return json.dumps(datasets)
+
 
 @app.route('/get_predictions')
 def get_predictions():
@@ -106,7 +109,8 @@ def get_predictions():
     if steps.ndim == 1:
         steps = np.stack((steps, steps + 9), axis=-1)
     datasets = []
-    pal = sns.color_palette('hls', controller.hsmm_wrapper.args['n_classes']).as_hex()
+    n_classes = controller.HSMM_WRAPPER.args['n_classes']
+    pal = sns.color_palette('hls', n_classes).as_hex()
     for i, pred in enumerate(predictions):
         datasets.append({
             'data': [1],
@@ -117,6 +121,7 @@ def get_predictions():
             'timestamp': controller.get_timestamp(session, steps[i][0])
         })
     return json.dumps(datasets)
+
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000)

@@ -3,12 +3,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 
+
 def reduce(z):
     n_dim = z['train'].shape[-1]
     scaler = PCA(n_components=2).fit(z['train'].reshape((-1, n_dim)))
     for type in ['train', 'dev', 'test']:
-        z[type] = scaler.transform(z[type].reshape((-1, n_dim))).reshape((z[type].shape[0], z[type].shape[1], 2))
+        z_reshape = z[type].reshape((-1, n_dim))
+        z_transform = scaler.transform(z_reshape)
+        z[type] = z_transform.reshape(z[type].shape)
     return z
+
 
 if __name__ == '__main__':
     sessions = input_modules.InputModule.build_from_config('autoencoder_Apple')
@@ -22,5 +26,5 @@ if __name__ == '__main__':
     print(np.mean(z[labels == 0]))
     print(np.mean(z[labels == 1]))
     steps = next(iter(sessions.steps['dev'].values()))
-    plt.scatter(x=z[:,0], y=z[:,1], c=labels)
+    plt.scatter(x=z[:, 0], y=z[:, 1], c=labels)
     plt.show()

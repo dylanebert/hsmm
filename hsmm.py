@@ -5,6 +5,7 @@ from torch_struct import SemiMarkovCRF
 from sklearn.mixture import GaussianMixture
 from scipy.optimize import linear_sum_assignment
 
+
 class SemiMarkovModule(torch.nn.Module):
     def __init__(self, n_dims, n_classes, max_k, allow_self_transitions, cov_factor):
         super(SemiMarkovModule, self).__init__()
@@ -335,6 +336,7 @@ class SemiMarkovModule(torch.nn.Module):
             seqs.append(spans[i, :lengths[i]])
         return seqs
 
+
 def sliding_sum(inputs, k):
     batch_size = inputs.size(0)
     assert k > 0
@@ -345,6 +347,7 @@ def sliding_sum(inputs, k):
     ret = sliding_summed[:, k:-1, :]
     assert ret.shape == inputs.shape
     return ret
+
 
 def semimarkov_sufficient_stats(feature_list, label_list, length_list, covariance_type, n_classes, max_k=None):
     assert len(feature_list) == len(label_list) == len(length_list)
@@ -394,6 +397,7 @@ def semimarkov_sufficient_stats(feature_list, label_list, length_list, covarianc
         'instance_count': instance_count
     }
 
+
 def optimal_map(pred, true, possible):
     assert all(l in possible for l in pred) and all(l in possible for l in true)
     table = np.zeros((len(possible), len(possible)))
@@ -407,6 +411,7 @@ def optimal_map(pred, true, possible):
     remapped = pred.cpu().clone()
     remapped.apply_(lambda label: mapping[label])
     return remapped, mapping
+
 
 def rle_spans(spans, lengths):
     b, _ = spans.size()
@@ -432,6 +437,7 @@ def rle_spans(spans, lengths):
         all_rle.append(rle_)
     return all_rle
 
+
 def labels_to_spans(labels, max_k):
     _, N = labels.size()
     prev = labels[:, 0]
@@ -449,6 +455,7 @@ def labels_to_spans(labels, max_k):
         prev = label
     return torch.cat(values, dim=1)
 
+
 def spans_to_labels(spans):
     _, N = spans.size()
     labels = spans[:, 0]
@@ -460,6 +467,3 @@ def spans_to_labels(spans):
         values.append(labels_.unsqueeze(1))
         labels = labels_
     return torch.cat(values, dim=1)
-
-if __name__ == '__main__':
-    pass
