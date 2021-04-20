@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
+
 class LSTM(tf.keras.models.Model):
     def __init__(self, seq_len, input_dim, hidden_dim):
         super(LSTM, self).__init__()
@@ -24,6 +25,7 @@ class LSTM(tf.keras.models.Model):
         x = self.lstm2(x)
         return x
 
+
 def transform_data(data, window=2, stride=1, lag=1):
     x = {'train': [], 'dev': [], 'test': []}
     y = {'train': [], 'dev': [], 'test': []}
@@ -35,7 +37,7 @@ def transform_data(data, window=2, stride=1, lag=1):
             length = lengths[i]
             n_chunks = (length - window - lag) // stride
             for j in range(n_chunks):
-                x_ = z_[j * stride : j * stride + window]
+                x_ = z_[j * stride:j * stride + window]
                 y_ = z_[j * stride + window + lag]
                 x[type].append(x_)
                 y[type].append(y_)
@@ -43,6 +45,7 @@ def transform_data(data, window=2, stride=1, lag=1):
         x[type] = np.array(x[type], dtype=np.float32)
         y[type] = np.array(y[type], dtype=np.float32)
     return x, y
+
 
 if __name__ == '__main__':
     import input_modules
@@ -61,7 +64,6 @@ if __name__ == '__main__':
 
     for type in ['train', 'dev', 'test']:
         z = lstm.encode(x[type]).numpy()
-        
 
     '''import matplotlib.pyplot as plt
     y_pred = lstm(x['dev']).numpy()
@@ -71,4 +73,4 @@ if __name__ == '__main__':
     plt.plot(_x, real)
     plt.plot(_x, pred)
     plt.show()'''
-    #x_ = lstm(x['dev'])
+    # x_ = lstm(x['dev'])

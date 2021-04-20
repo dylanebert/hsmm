@@ -53,7 +53,8 @@ class SemiMarkovModule(torch.nn.Module):
         self.gaussian_cov.data = torch.ones(self.n_classes, self.feature_dim, device=self.gaussian_cov.device) * self.cov_factor
 
     def initialize_supervised(self, feature_list, label_list, length_list, overrides=['mean', 'cov', 'init', 'trans', 'lengths'], freeze=True):
-        emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, length_list, covariance_type='diag', n_classes=self.n_classes, max_k=self.max_k)
+        emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, length_list,
+                                                          covariance_type='diag', n_classes=self.n_classes, max_k=self.max_k)
         if 'init' in overrides:
             init_probs = (stats['span_start_counts'] + self.supervised_state_smoothing) /\
                 float(stats['instance_count'] + self.supervised_state_smoothing * self.n_classes)
@@ -85,12 +86,14 @@ class SemiMarkovModule(torch.nn.Module):
         if 'cov' in overrides:
             self.gaussian_cov.data.zero_()
             self.gaussian_cov.data.add_(torch.from_numpy(emission_gmm.covariances_ + 1e-3).to(device=self.gaussian_cov.device, dtype=torch.float))
-            self.gaussian_cov.data.add_(torch.full(self.gaussian_cov.size(), self.supervised_cov_smoothing).to(device=self.gaussian_cov.device, dtype=torch.float))
+            self.gaussian_cov.data.add_(torch.full(self.gaussian_cov.size(), self.supervised_cov_smoothing)
+                                        .to(device=self.gaussian_cov.device, dtype=torch.float))
 
     def fit_supervised(self, feature_list, label_list, length_list):
-        emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, length_list, covariance_type='diag', n_classes=self.n_classes, max_k=self.max_k)
+        emission_gmm, stats = semimarkov_sufficient_stats(feature_list, label_list, length_list,
+                                                          covariance_type='diag', n_classes=self.n_classes, max_k=self.max_k)
 
-        init_probs = (stats['span_start_counts'] + selfsupervised_state_smoothing) /\
+        init_probs = (stats['span_start_counts'] + self.supervised_state_smoothing) /\
             float(stats['instance_count'] + self.supervised_state_smoothing * self.n_classes)
         init_probs[np.isnan(init_probs)] = 0
         self.init_logits.data.zero_()
@@ -301,10 +304,8 @@ class SemiMarkovModule(torch.nn.Module):
     def log_likelihood(self, features, lengths, valid_classes_per_instance, add_eos=True):
         if valid_classes_per_instance is not None:
             valid_classes = valid_classes_per_instance[0]
-            C = len(valid_classes)
         else:
             valid_classes = None
-            C = self.n_classes
 
         scores = self.score_features(features, lengths, valid_classes, add_eos=add_eos)
 
@@ -313,10 +314,8 @@ class SemiMarkovModule(torch.nn.Module):
 
         if add_eos:
             eos_lengths = lengths + 1
-            eos_C = C + 1
         else:
             eos_lengths = lengths
-            eoc_C = C
 
         dist = SemiMarkovCRF(scores, lengths=eos_lengths)
         log_likelihood = dist.partition.mean()
@@ -361,7 +360,9 @@ def semimarkov_sufficient_stats(feature_list, label_list, length_list, covarianc
     span_transition_counts = np.zeros((n_classes, n_classes), dtype=np.float32)
     instance_count = 0
     for X, labels, seq_len in zip(feature_list, label_list, length_list):
-        X = X.cpu(); labels = labels.cpu(); seq_len = seq_len.cpu().numpy()
+        X = X.cpu()
+        labels = labels.cpu()
+        seq_len = seq_len.cpu().numpy()
         X_l.append(X)
         r = np.zeros((X.shape[0], n_classes))
         r[np.arange(X.shape[0]), labels] = 1
@@ -399,7 +400,7 @@ def semimarkov_sufficient_stats(feature_list, label_list, length_list, covarianc
 
 
 def optimal_map(pred, true, possible):
-    assert all(l in possible for l in pred) and all(l in possible for l in true)
+    assert all(label in possible for label in pred) and all(label in possible for label in true)
     table = np.zeros((len(possible), len(possible)))
     labels = possible.detach().cpu().numpy()
     for i, label in enumerate(labels):

@@ -1,14 +1,12 @@
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from hsmm import SemiMarkovModule, optimal_map
-import glob
+from hsmm import optimal_map
 import argparse
 import data
 import pickle
-import pandas as pd
+
 
 def viz_parameters(model):
     means = model.gaussian_means.detach().cpu().numpy()
@@ -63,6 +61,7 @@ def viz_parameters(model):
     plt.tight_layout()
     plt.show()
 
+
 def viz_state_seq(model, dataset, remap=True):
     features = dataset[0]['features'].unsqueeze(0)
     lengths = dataset[0]['lengths'].unsqueeze(0)
@@ -116,6 +115,7 @@ def viz_state_seq(model, dataset, remap=True):
         ax1.axis('off')
         plt.tight_layout()
         plt.show()
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

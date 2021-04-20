@@ -1,20 +1,16 @@
 import numpy as np
-import pandas as pd
 import torch
-import random
-import argparse
-from hsmm import SemiMarkovModule, optimal_map, spans_to_labels
+from hsmm import SemiMarkovModule, spans_to_labels
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 import sys
 import os
-from sklearn import preprocessing
 import json
 from input_modules import InputModule
 
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 NBC_ROOT = os.environ['NBC_ROOT']
 sys.path.append(NBC_ROOT)
+
 
 class SemiMarkovDataset(torch.utils.data.Dataset):
     def __init__(self, features, lengths, device):
@@ -31,6 +27,7 @@ class SemiMarkovDataset(torch.utils.data.Dataset):
         }
         return batch
 
+
 def viz(pred):
     pred = pred[np.newaxis, :]
     N = pred.shape[-1]
@@ -42,6 +39,7 @@ def viz(pred):
     ax1.axis('off')
     plt.tight_layout()
     plt.show()
+
 
 class HSMMWrapper:
     def __init__(self, fname, device='cpu'):
@@ -80,7 +78,8 @@ class HSMMWrapper:
         if not os.path.exists(weights_path) or not os.path.exists(predictions_path):
             return False
         if load_model:
-            self.model = SemiMarkovModule(self.n_dim, self.args['n_classes'], self.args['max_k'], self.args['allow_self_transitions'], self.args['cov_factor']).to(self.device)
+            self.model = SemiMarkovModule(self.n_dim, self.args['n_classes'], self.args['max_k'],
+                                          self.args['allow_self_transitions'], self.args['cov_factor']).to(self.device)
             self.model.load_state_dict(torch.load(weights_path))
         with open(predictions_path) as f:
             self.predictions = json.load(f)
@@ -89,15 +88,17 @@ class HSMMWrapper:
 
     def train_unsupervised(self):
         train_loader = torch.utils.data.DataLoader(self.data['train'], batch_size=10)
-        dev_loader = torch.utils.data.DataLoader(self.data['dev'], batch_size=10)
 
-        self.model = SemiMarkovModule(self.n_dim, self.args['n_classes'], self.args['max_k'], self.args['allow_self_transitions'], self.args['cov_factor']).to(self.device)
+        self.model = SemiMarkovModule(self.n_dim, self.args['n_classes'], self.args['max_k'],
+                                      self.args['allow_self_transitions'], self.args['cov_factor']).to(self.device)
         self.model.initialize_gaussian(self.data['train'].features, self.data['train'].lengths)
         optimizer = torch.optim.Adam(self.model.parameters(), self.model.learning_rate)
 
         best_loss = 1e9
-        best_model = SemiMarkovModule(self.n_dim, self.args['n_classes'], self.args['max_k'], self.args['allow_self_transitions'], self.args['cov_factor']).to(self.device)
-        k = 0; patience = 5
+        best_model = SemiMarkovModule(self.n_dim, self.args['n_classes'], self.args['max_k'],
+                                      self.args['allow_self_transitions'], self.args['cov_factor']).to(self.device)
+        k = 0
+        patience = 5
         epoch = 0
         self.model.train()
         while True:
@@ -135,7 +136,6 @@ class HSMMWrapper:
         for batch in data:
             features = batch['features']
             lengths = batch['lengths']
-            batch_size = features.size(0)
             N_ = lengths.max().item()
             features = features[:, :N_, :]
             pred_spans = self.model.viterbi(features, lengths, valid_classes_per_instance=None, add_eos=True)
@@ -146,7 +146,6 @@ class HSMMWrapper:
 
     def debug(self, type='dev'):
         features = self.data['dev'][0]['features'].unsqueeze(0)
-        lengths = self.data['dev'][0]['lengths'].unsqueeze(0)
 
         params = {
             'features': features.cpu().numpy(),
@@ -161,6 +160,7 @@ class HSMMWrapper:
         np.set_printoptions(suppress=True)
         for param in ['mean', 'cov', 'trans', 'lengths']:
             print('{}\n{}\n'.format(param, params[param]))
+
 
 class VirtualHSMMWrapper:
     def __init__(self, fname):
@@ -183,9 +183,11 @@ class VirtualHSMMWrapper:
                 z_ = (z_ > 0).astype(int)
                 self.predictions[type].append(z_)
 
+
 class Args:
     def __init__(self):
         return
+
 
 if __name__ == '__main__':
     config = sys.argv[1]

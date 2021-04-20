@@ -7,6 +7,7 @@ assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 NBC_ROOT = os.environ['NBC_ROOT']
 sys.path.append(NBC_ROOT)
 
+
 def merge_similar_states(hsmm_wrapper):
     predictions = hsmm_wrapper.predictions
     model = hsmm_wrapper.model
@@ -37,7 +38,7 @@ def merge_similar_states(hsmm_wrapper):
     for i in range(means.shape[0]):
         if i not in merge_pointers:
             merge_pointers[i] = i
-    merge_pointers = dict(sorted(merge_pointers.items(), key = lambda item: item[0]))
+    merge_pointers = dict(sorted(merge_pointers.items(), key=lambda item: item[0]))
 
     values = np.unique(list(merge_pointers.values()))
     label_mapping = {}
@@ -52,6 +53,7 @@ def merge_similar_states(hsmm_wrapper):
         for i in range(len(predictions[type])):
             predictions[type][i] = [labels[x] for x in predictions[type][i]]
     hsmm_wrapper.predictions = predictions
+
 
 if __name__ == '__main__':
     hsmm_wrapper = HSMMWrapper('hsmm_engineered')
