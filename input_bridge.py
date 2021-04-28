@@ -14,6 +14,6 @@ if __name__ == '__main__':
     fnames = os.listdir(dir)
     for fname in fnames:
         fpath = os.path.join(dir, fname)
-        df = pd.read_json(fpath, orient='index')
+        df = pd.read_json(fpath, orient='index').sort_index()
         print(df)
         break
