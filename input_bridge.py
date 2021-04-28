@@ -1,6 +1,8 @@
 import numpy as np
+import pandas as pd
 import os
 import sys
+import json
 
 
 assert 'THOR_ROOT' in os.environ, 'set THOR_ROOT'
@@ -12,4 +14,6 @@ if __name__ == '__main__':
     fnames = os.listdir(dir)
     for fname in fnames:
         fpath = os.path.join(dir, fname)
-        print(fpath)
+        df = pd.read_json(fpath, orient='index')
+        print(df)
+        break
