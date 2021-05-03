@@ -1,18 +1,16 @@
-import os
 import json
 from flask import Flask, request, render_template
 import seaborn as sns
 from data import nbc_bridge
-
-
-assert 'HSMM_ROOT' in os.environ, 'set HSMM_ROOT'
-assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
-HSMM_ROOT = os.environ['HSMM_ROOT']
-NBC_ROOT = os.environ['NBC_ROOT']
+from data import input_manager
+import numpy as np
+import pandas as pd
 
 
 app = Flask(__name__)
 df = nbc_bridge.load_nbc_data()
+df = input_manager.subsample(df)
+df = input_manager.compute_depth(df)
 
 
 @app.route('/')
@@ -30,8 +28,12 @@ def get_sessions():
 def get_input_data():
     session = request.args.get('session')
     rows = df[df['session'] == session]
-    z = rows[['posX', 'posY', 'posZ']].to_numpy()
-    steps = rows['step'].to_numpy()
+    idx = pd.IndexSlice
+    labels = ['height', 'depth']
+    z = rows.loc[:, idx[labels, 'RightHand']].to_numpy()
+    print(z.shape)
+    steps = np.array([index[0] for index in rows.index.values])
+    print(steps)
     n_points, n_dim = z.shape
     pal = sns.color_palette('hls', n_dim).as_hex()
     datasets = []
@@ -42,7 +44,7 @@ def get_input_data():
             points.append(point)
         dataset = {
             'data': points,
-            'label': str(i),
+            'label': labels[i],
             'borderColor': pal[i],
             'fill': False
         }

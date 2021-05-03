@@ -14,8 +14,9 @@ for k, v in participants.items():
     for elem in v:
         participant_lookup[elem] = k
 
+
 obj_names = ['Knife', 'Banana', 'Apple', 'Fork', 'Plant', 'Book', 'Spoon', 'Bowl', 'Cup',
-             'Lamp', 'Ball', 'Bear', 'Toy', 'Doll', 'RightHand', 'LeftHand', 'Head', 'Dinosaur']
+             'Lamp', 'Ball', 'Bear', 'Toy', 'Doll', 'Dinosaur']
 
 
 def load_nbc_data():
@@ -35,4 +36,3 @@ def load_nbc_data():
 
 if __name__ == '__main__':
     data = load_nbc_data()
-    print(data['posX'].index)
