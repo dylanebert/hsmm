@@ -1,7 +1,6 @@
 import os
 import json
 from flask import Flask, request, render_template
-import numpy as np
 import seaborn as sns
 from data import nbc_bridge
 
@@ -50,49 +49,6 @@ def get_input_data():
         datasets.append(dataset)
     data = {'labels': steps.astype(str).tolist(), 'datasets': datasets}
     return json.dumps(data)
-
-
-@app.route('/get_hsmm_input_encodings')
-def get_hsmm_input_encodings():
-    session = request.args.get('session')
-    data = controller.get_hsmm_input_encodings(session, 'dev')
-    pal = sns.color_palette('hls', data['label'].max() + 1).as_hex()
-    data['x'] = data.apply(lambda row: row['encoding'][0], axis=1)
-    try:
-        data['y'] = data.apply(lambda row: row['encoding'][1], axis=1)
-    except Exception:
-        data['y'] = 0
-    datasets = []
-    for label, rows in data.groupby('label'):
-        data = rows[['x', 'y', 'timestamp', 'start_step', 'end_step']]
-        dataset = {
-            'label': label,
-            'data': data.to_dict(orient='records'),
-            'backgroundColor': pal[label]
-        }
-        datasets.append(dataset)
-    return json.dumps(datasets)
-
-
-@app.route('/get_predictions')
-def get_predictions():
-    session = request.args.get('session')
-    predictions, steps = controller.get_predictions(session, 'dev')
-    if steps.ndim == 1:
-        steps = np.stack((steps, steps + 9), axis=-1)
-    datasets = []
-    n_classes = controller.HSMM_WRAPPER.args['n_classes']
-    pal = sns.color_palette('hls', n_classes).as_hex()
-    for i, pred in enumerate(predictions):
-        datasets.append({
-            'data': [1],
-            'label': int(pred),
-            'backgroundColor': pal[pred],
-            'start_step': int(steps[i][0]),
-            'end_step': int(steps[i][-1]),
-            'timestamp': controller.get_timestamp(session, steps[i][0])
-        })
-    return json.dumps(datasets)
 
 
 if __name__ == '__main__':
