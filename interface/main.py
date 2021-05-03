@@ -1,76 +1,48 @@
-from eval import OddManOut
 import os
-import controller
 import json
-from flask import Flask, request
+from flask import Flask, request, render_template
 import numpy as np
 import seaborn as sns
+from data import nbc_bridge
+
 
 assert 'HSMM_ROOT' in os.environ, 'set HSMM_ROOT'
 assert 'NBC_ROOT' in os.environ, 'set NBC_ROOT'
 HSMM_ROOT = os.environ['HSMM_ROOT']
 NBC_ROOT = os.environ['NBC_ROOT']
 
+
 app = Flask(__name__)
-ARGS = None
+df = nbc_bridge.load_nbc_data()
 
 
 @app.route('/')
-def hello():
-    return 'python engine running'
-
-
-@app.route('/load_config')
-def load_config():
-    fpath = request.args.get('fpath')
-    controller.initialize(fpath)
-    return 'success'
-
-
-@app.route('/get_eval')
-def get_eval():
-    hsmm_wrapper = controller.HSMM_WRAPPER
-    eval = OddManOut(hsmm_wrapper)
-    questions = eval.questions
-    answers = eval.answers
-    for qidx in range(len(answers)):
-        if answers[qidx] is None:
-            print((qidx, len(answers)))
-            return json.dumps((qidx, questions[qidx]))
-    return 'done'
-
-
-@app.route('/write_answer')
-def write_answer():
-    qidx = int(request.args.get('qidx'))
-    answer = int(request.args.get('answer'))
-    hsmm_wrapper = controller.HSMM_WRAPPER
-    eval = OddManOut(hsmm_wrapper)
-    eval.answers[qidx] = answer
-    eval.save()
-    return 'success'
+def index():
+    return render_template('dataviewer.html')
 
 
 @app.route('/get_sessions')
 def get_sessions():
-    sessions = list(controller.INPUT_MODULE.steps['dev'].keys())
+    sessions = list(df['session'].unique())
     return json.dumps(sessions)
 
 
 @app.route('/get_input_data')
 def get_input_data():
     session = request.args.get('session')
-    z, steps = controller.get_input_data(session)
+    rows = df[df['session'] == session]
+    z = rows[['posX', 'posY', 'posZ']].to_numpy()
+    steps = rows['step'].to_numpy()
     n_points, n_dim = z.shape
     pal = sns.color_palette('hls', n_dim).as_hex()
     datasets = []
     for i in range(n_dim):
-        data = []
+        points = []
         for j in range(n_points):
             point = float(z[j, i])
-            data.append(point)
+            points.append(point)
         dataset = {
-            'data': data,
+            'data': points,
             'label': str(i),
             'borderColor': pal[i],
             'fill': False

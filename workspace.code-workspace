@@ -5,6 +5,6 @@
 		}
 	],
 	"settings": {
-		"python.pythonPath": "/Users/dylan/miniforge3/bin/python"
+		"python.pythonPath": "C:\\Users\\dylan\\.conda\\envs\\act-recog\\python.exe"
 	}
 }
