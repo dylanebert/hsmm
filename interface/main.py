@@ -1,16 +1,13 @@
 import json
 from flask import Flask, request, render_template
 import seaborn as sns
-from data import nbc_bridge
 from data import input_manager
-import numpy as np
 import pandas as pd
 
 
 app = Flask(__name__)
-df = nbc_bridge.load_nbc_data()
-df = input_manager.subsample(df)
-df = input_manager.compute_depth(df)
+
+df = input_manager.load_cached('nbc_sub3_energy')
 
 
 @app.route('/')
@@ -20,20 +17,19 @@ def index():
 
 @app.route('/get_sessions')
 def get_sessions():
-    sessions = list(df['session'].unique())
+    sessions = df.index.unique(level='session').tolist()
     return json.dumps(sessions)
 
 
 @app.route('/get_input_data')
 def get_input_data():
     session = request.args.get('session')
-    rows = df[df['session'] == session]
+    rows = df.loc[session]
     idx = pd.IndexSlice
-    labels = ['height', 'depth']
+    labels = ['energy_smoothed', 'energy_trough', 'energy_peak']
     z = rows.loc[:, idx[labels, 'RightHand']].to_numpy()
     print(z.shape)
-    steps = np.array([index[0] for index in rows.index.values])
-    print(steps)
+    steps = rows.index.to_numpy()
     n_points, n_dim = z.shape
     pal = sns.color_palette('hls', n_dim).as_hex()
     datasets = []

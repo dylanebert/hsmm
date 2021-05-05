@@ -29,6 +29,8 @@ def load_nbc_data():
         participant = '_'.join(session.split('_')[:2])
         rows['session'] = session
         rows['type'] = participant_lookup[participant]
+        rows.reset_index(inplace=True)
+        rows = rows.set_index(['session', 'step']).sort_index()
         data.append(rows)
     data = pd.concat(data).fillna(0)
     return data
