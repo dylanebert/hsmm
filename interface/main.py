@@ -26,8 +26,8 @@ def get_input_data():
     session = request.args.get('session')
     rows = df.loc[session]
     idx = pd.IndexSlice
-    labels = ['energy_smoothed', 'energy_trough', 'energy_peak']
-    z = rows.loc[:, idx[labels, 'RightHand']].to_numpy()
+    labels = ['energy']
+    z = rows.loc[:, idx[labels]].to_numpy()
     print(z.shape)
     steps = rows.index.to_numpy()
     n_points, n_dim = z.shape
