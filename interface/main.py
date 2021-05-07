@@ -8,6 +8,7 @@ import pandas as pd
 app = Flask(__name__)
 
 df = input_manager.load_cached('nbc_sub3_energy')
+actions = input_manager.load_cached('nbc_sub3_actions')
 
 
 @app.route('/')
@@ -25,10 +26,11 @@ def get_sessions():
 def get_input_data():
     session = request.args.get('session')
     rows = df.loc[session]
+    actions_ = actions[actions['session'] == session]
+    print(actions_)
     idx = pd.IndexSlice
     labels = ['energy']
     z = rows.loc[:, idx[labels]].to_numpy()
-    print(z.shape)
     steps = rows.index.to_numpy()
     n_points, n_dim = z.shape
     pal = sns.color_palette('hls', n_dim).as_hex()
