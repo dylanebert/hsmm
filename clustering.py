@@ -43,4 +43,4 @@ if __name__ == '__main__':
     actions = input_manager.load_cached('nbc_sub3_actions')
     x, actions = get_trajectory_vectors(data, actions)
     actions = get_cluster_labels(actions, x)
-    input_manager.cache(data, 'nbc_sub3_actions_with_cluster_labels')
+    input_manager.cache(actions, 'nbc_sub3_actions_with_cluster_labels')
