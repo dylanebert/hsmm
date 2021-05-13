@@ -4,8 +4,8 @@ from tslearn.utils import to_time_series_dataset
 import pandas as pd
 
 
-def get_cluster_labels(actions, x):
-    km = TimeSeriesKMeans(n_clusters=8, metric='dtw').fit(x['train'])
+def get_cluster_labels(actions, x, n_clusters):
+    km = TimeSeriesKMeans(n_clusters=n_clusters, metric='dtw').fit(x['train'])
     actions_split = {}
     for type in ['train', 'dev', 'test']:
         actions_split[type] = actions[actions['type'] == type]
@@ -38,9 +38,11 @@ def get_trajectory_vectors(data, actions):
 
 
 if __name__ == '__main__':
+    import sys
+    n_clusters = sys.argv[1]
     data = input_manager.load_cached('energy')
     data = input_manager.compute_relative(data)
     actions = input_manager.load_cached('actions')
     x, actions = get_trajectory_vectors(data, actions)
-    actions = get_cluster_labels(actions, x)
+    actions = get_cluster_labels(actions, x, n_clusters)
     input_manager.cache(actions, 'actions_with_cluster_labels')
