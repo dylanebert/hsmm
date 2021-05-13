@@ -93,10 +93,10 @@ def compute_motion_energy(data, W=30, sigma=5, delta=3e-2):
     return data
 
 
-def compute_action_boundaries(data, peak_distance=30, max_peak_width=100):
+def compute_action_boundaries(data, peak_distance=30):
     me_curve = data.loc[:, 'energy'].to_numpy()
     peak_idx, _ = signal.find_peaks(me_curve, distance=peak_distance)
-    peak_width = signal.peak_widths(me_curve, peak_idx, rel_height=1, wlen=max_peak_width)[0].astype(int)
+    peak_width = signal.peak_widths(me_curve, peak_idx, rel_height=1)[0].astype(int)
     n_peaks = peak_idx.shape[0]
     actions = []
     index = data.index.tolist()
@@ -117,8 +117,8 @@ def compute_action_boundaries(data, peak_distance=30, max_peak_width=100):
 
 if __name__ == '__main__':
     data = input_manager.load_cached('nbc_sub3')
-    data = compute_motion_energy(data)
+    data = compute_motion_energy(data, delta=5e-1)
     data, actions = compute_action_boundaries(data)
-    input_manager.cache(data, 'nbc_sub3_energy')
-    input_manager.cache(actions, 'nbc_sub3_actions')
+    input_manager.cache(data, 'energy')
+    input_manager.cache(actions, 'actions')
     print(actions)

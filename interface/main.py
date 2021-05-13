@@ -7,8 +7,8 @@ import pandas as pd
 
 app = Flask(__name__)
 
-df = input_manager.load_cached('nbc_sub3_energy')
-actions = input_manager.load_cached('nbc_sub3_actions')
+df = input_manager.load_cached('energy')
+actions = input_manager.load_cached('actions')
 
 
 @app.route('/')

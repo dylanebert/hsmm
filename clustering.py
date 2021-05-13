@@ -5,7 +5,7 @@ import pandas as pd
 
 
 def get_cluster_labels(actions, x):
-    km = TimeSeriesKMeans(n_clusters=16, metric='dtw').fit(x['train'])
+    km = TimeSeriesKMeans(n_clusters=8, metric='dtw').fit(x['train'])
     actions_split = {}
     for type in ['train', 'dev', 'test']:
         actions_split[type] = actions[actions['type'] == type]
@@ -38,9 +38,9 @@ def get_trajectory_vectors(data, actions):
 
 
 if __name__ == '__main__':
-    data = input_manager.load_cached('nbc_sub3_energy')
+    data = input_manager.load_cached('energy')
     data = input_manager.compute_relative(data)
-    actions = input_manager.load_cached('nbc_sub3_actions')
+    actions = input_manager.load_cached('actions')
     x, actions = get_trajectory_vectors(data, actions)
     actions = get_cluster_labels(actions, x)
-    input_manager.cache(actions, 'nbc_sub3_actions_with_cluster_labels')
+    input_manager.cache(actions, 'actions_with_cluster_labels')
