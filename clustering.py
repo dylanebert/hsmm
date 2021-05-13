@@ -39,7 +39,7 @@ def get_trajectory_vectors(data, actions):
 
 if __name__ == '__main__':
     import sys
-    n_clusters = sys.argv[1]
+    n_clusters = int(sys.argv[1])
     data = input_manager.load_cached('energy')
     data = input_manager.compute_relative(data)
     actions = input_manager.load_cached('actions')
