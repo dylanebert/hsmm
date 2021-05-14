@@ -45,4 +45,4 @@ if __name__ == '__main__':
     actions = input_manager.load_cached('actions')
     x, actions = get_trajectory_vectors(data, actions)
     actions = get_cluster_labels(actions, x, n_clusters)
-    input_manager.cache(actions, 'actions_with_cluster_labels')
+    input_manager.cache(actions, 'actions_with_cluster_labels_{}'.format(n_clusters))
