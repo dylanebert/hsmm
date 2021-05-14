@@ -8,7 +8,7 @@ def prepare_question_commands(actions, group, questions_per_action=10):
     labels = np.array(actions['label'].unique())
     for label, rows in actions.groupby('label'):
         for i in range(questions_per_action):
-            same = rows.sample(n=3)
+            same = rows.sample(n=3, replace=True)
             odd_label = np.random.choice(labels[~(labels == label)])
             odd = actions[actions['label'] == odd_label].sample(n=1)
             odd_idx = np.random.choice(range(4))
@@ -47,8 +47,8 @@ def prepare_video_commands(data, actions, dname):
 
 
 if __name__ == '__main__':
-    data = input_manager.load_cached('nbc_sub3')
-    actions = input_manager.load_cached('nbc_sub3_actions_with_cluster_labels')
-    # prepare_video_commands(data, actions, 'hands_height_depth')
+    data = input_manager.load_cached('energy')
+    actions = input_manager.load_cached('actions_with_cluster_labels_16')
+    prepare_video_commands(data, actions, 'hands_height_depth')
     actions = actions[actions['type'] == 'dev']
-    prepare_question_commands(actions, 77893, questions_per_action=2)
+    prepare_question_commands(actions, 1, questions_per_action=2)
